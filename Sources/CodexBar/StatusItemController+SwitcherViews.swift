@@ -1,6 +1,11 @@
 import AppKit
 import CodexBarCore
 
+enum ProviderSwitcherSelection: Equatable {
+    case overview
+    case provider(UsageProvider)
+}
+
 final class ProviderSwitcherView: NSView {
     private struct Segment {
         let provider: UsageProvider
