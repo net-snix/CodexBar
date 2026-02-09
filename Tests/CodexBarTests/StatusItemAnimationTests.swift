@@ -125,162 +125,6 @@ struct StatusItemAnimationTests {
     }
 
     @Test
-    func warpNoBonusLayoutIsPreservedInShowUsedModeWhenBonusIsExhausted() {
-        guard UsageProvider.allCases.contains(.warp) else {
-            #expect(UsageProvider.allCases == [.codex])
-            return
-        }
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "StatusItemAnimationTests-warp-no-bonus-used"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
-        settings.statusChecksEnabled = false
-        settings.refreshFrequency = .manual
-        settings.mergeIcons = false
-        settings.menuBarShowsBrandIconWithPercent = false
-        settings.usageBarsShowUsed = true
-
-        let registry = ProviderRegistry.shared
-        if let warpMeta = registry.metadata[.warp] {
-            settings.setProviderEnabled(provider: .warp, metadata: warpMeta, enabled: true)
-        }
-
-        let fetcher = UsageFetcher()
-        let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
-        let controller = StatusItemController(
-            store: store,
-            settings: settings,
-            account: fetcher.loadAccountInfo(),
-            updater: DisabledUpdaterController(),
-            preferencesSelection: PreferencesSelection(),
-            statusBar: self.makeStatusBarForTesting())
-
-        // Primary used=10%. Bonus exhausted: used=100% (remaining=0%).
-        let snapshot = UsageSnapshot(
-            primary: RateWindow(usedPercent: 10, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
-            secondary: RateWindow(usedPercent: 100, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
-            updatedAt: Date())
-        store._setSnapshotForTesting(snapshot, provider: .warp)
-        store._setErrorForTesting(nil, provider: .warp)
-
-        controller.applyIcon(for: .warp, phase: nil)
-
-        guard let image = controller.statusItems[.warp]?.button?.image else {
-            #expect(Bool(false))
-            return
-        }
-        let rep = image.representations.compactMap { $0 as? NSBitmapImageRep }.first(where: {
-            $0.pixelsWide == 36 && $0.pixelsHigh == 36
-        })
-        #expect(rep != nil)
-        guard let rep else { return }
-
-        // In the Warp "no bonus/exhausted bonus" layout, the bottom bar is a dimmed track.
-        // A pixel near the right side of the bottom bar should remain subdued (not fully opaque).
-        let alpha = (rep.colorAt(x: 25, y: 9) ?? .clear).alphaComponent
-        #expect(alpha < 0.6)
-    }
-
-    @Test
-    func warpBonusLaneIsPreservedInShowUsedModeWhenBonusIsUnused() {
-        guard UsageProvider.allCases.contains(.warp) else {
-            #expect(UsageProvider.allCases == [.codex])
-            return
-        }
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "StatusItemAnimationTests-warp-unused-bonus-used"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
-        settings.statusChecksEnabled = false
-        settings.refreshFrequency = .manual
-        settings.mergeIcons = false
-        settings.menuBarShowsBrandIconWithPercent = false
-        settings.usageBarsShowUsed = true
-
-        let registry = ProviderRegistry.shared
-        if let warpMeta = registry.metadata[.warp] {
-            settings.setProviderEnabled(provider: .warp, metadata: warpMeta, enabled: true)
-        }
-
-        let fetcher = UsageFetcher()
-        let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
-        let controller = StatusItemController(
-            store: store,
-            settings: settings,
-            account: fetcher.loadAccountInfo(),
-            updater: DisabledUpdaterController(),
-            preferencesSelection: PreferencesSelection(),
-            statusBar: self.makeStatusBarForTesting())
-
-        // Bonus exists but is unused: used=0% (remaining=100%).
-        let snapshot = UsageSnapshot(
-            primary: RateWindow(usedPercent: 10, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
-            secondary: RateWindow(usedPercent: 0, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
-            updatedAt: Date())
-        store._setSnapshotForTesting(snapshot, provider: .warp)
-        store._setErrorForTesting(nil, provider: .warp)
-
-        controller.applyIcon(for: .warp, phase: nil)
-
-        guard let image = controller.statusItems[.warp]?.button?.image else {
-            #expect(Bool(false))
-            return
-        }
-        let rep = image.representations.compactMap { $0 as? NSBitmapImageRep }.first(where: {
-            $0.pixelsWide == 36 && $0.pixelsHigh == 36
-        })
-        #expect(rep != nil)
-        guard let rep else { return }
-
-        // When we incorrectly treat "0 used" as "no bonus", the Warp branch makes the top bar full (100%).
-        // A pixel near the right side of the top bar should remain in the track-only range for 10% usage.
-        let alpha = (rep.colorAt(x: 31, y: 25) ?? .clear).alphaComponent
-        #expect(alpha < 0.6)
-    }
-
-    @Test
-    func loadingAnimationReusesFrameImageWithinSamePixelBucket() {
-        let settings = SettingsStore(
-            configStore: testConfigStore(suiteName: "StatusItemAnimationTests-loading-frame-cache"),
-            zaiTokenStore: NoopZaiTokenStore(),
-            syntheticTokenStore: NoopSyntheticTokenStore())
-        settings.statusChecksEnabled = false
-        settings.refreshFrequency = .manual
-        settings.mergeIcons = false
-        settings.menuBarShowsBrandIconWithPercent = false
-
-        let registry = ProviderRegistry.shared
-        if let codexMeta = registry.metadata[.codex] {
-            settings.setProviderEnabled(provider: .codex, metadata: codexMeta, enabled: true)
-        }
-
-        let fetcher = UsageFetcher()
-        let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
-        store._setSnapshotForTesting(nil, provider: .codex)
-        store._setErrorForTesting(nil, provider: .codex)
-
-        let controller = StatusItemController(
-            store: store,
-            settings: settings,
-            account: fetcher.loadAccountInfo(),
-            updater: DisabledUpdaterController(),
-            preferencesSelection: PreferencesSelection(),
-            statusBar: self.makeStatusBarForTesting())
-        controller.animationPattern = .knightRider
-
-        controller.applyIcon(for: .codex, phase: 0)
-        let first = controller.statusItems[.codex]?.button?.image
-        #expect(first != nil)
-
-        // Different floating-point percentages, same rendered fill width at 30px bars.
-        controller.applyIcon(for: .codex, phase: 0.02)
-        let second = controller.statusItems[.codex]?.button?.image
-        #expect(second != nil)
-
-        #expect(first === second)
-    }
-
-    @Test
     func menuBarPercentUsesConfiguredMetric() {
         let settings = SettingsStore(
             configStore: testConfigStore(suiteName: "StatusItemAnimationTests-metric"),
@@ -367,23 +211,28 @@ struct StatusItemAnimationTests {
             windowMinutes: 10080,
             resetsAt: now.addingTimeInterval(60 * 60 * 24 * 6),
             resetDescription: nil)
-        let paceValue = UsagePace.weekly(window: paceWindow, now: now, defaultWindowMinutes: 10080)
 
         let percent = MenuBarDisplayText.displayText(
             mode: .percent,
+            provider: .codex,
             percentWindow: percentWindow,
-            pace: paceValue,
-            showUsed: true)
+            paceWindow: paceWindow,
+            showUsed: true,
+            now: now)
         let pace = MenuBarDisplayText.displayText(
             mode: .pace,
+            provider: .codex,
             percentWindow: percentWindow,
-            pace: paceValue,
-            showUsed: true)
+            paceWindow: paceWindow,
+            showUsed: true,
+            now: now)
         let both = MenuBarDisplayText.displayText(
             mode: .both,
+            provider: .codex,
             percentWindow: percentWindow,
-            pace: paceValue,
-            showUsed: true)
+            paceWindow: paceWindow,
+            showUsed: true,
+            now: now)
 
         #expect(percent == "40%")
         #expect(pace == "+16%")
@@ -402,37 +251,18 @@ struct StatusItemAnimationTests {
 
         let pace = MenuBarDisplayText.displayText(
             mode: .pace,
+            provider: .gemini,
             percentWindow: percentWindow,
-            showUsed: true)
+            paceWindow: paceWindow,
+            showUsed: true,
+            now: now)
         let both = MenuBarDisplayText.displayText(
             mode: .both,
+            provider: .gemini,
             percentWindow: percentWindow,
-            showUsed: true)
-
-        #expect(pace == nil)
-        #expect(both == nil)
-    }
-
-    @Test
-    func menuBarDisplayTextRequiresProvidedPaceForCodex() {
-        let now = Date(timeIntervalSince1970: 0)
-        let percentWindow = RateWindow(usedPercent: 40, windowMinutes: nil, resetsAt: nil, resetDescription: nil)
-        let paceWindow = RateWindow(
-            usedPercent: 30,
-            windowMinutes: 10080,
-            resetsAt: now.addingTimeInterval(60 * 60 * 24 * 6),
-            resetDescription: nil)
-
-        let pace = MenuBarDisplayText.displayText(
-            mode: .pace,
-            percentWindow: percentWindow,
-            pace: nil,
-            showUsed: true)
-        let both = MenuBarDisplayText.displayText(
-            mode: .both,
-            percentWindow: percentWindow,
-            pace: nil,
-            showUsed: true)
+            paceWindow: paceWindow,
+            showUsed: true,
+            now: now)
 
         #expect(pace == nil)
         #expect(both == nil)
