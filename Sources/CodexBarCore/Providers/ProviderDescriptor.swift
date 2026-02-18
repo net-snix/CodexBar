@@ -107,12 +107,13 @@ public enum ProviderDescriptorRegistry {
     }
 
     public static var metadata: [UsageProvider: ProviderMetadata] {
-        Dictionary(uniqueKeysWithValues: self.all.map { ($0.id, $0.metadata) })
+        Dictionary(uniqueKeysWithValues: self.descriptorsByID.map { ($0.key, $0.value.metadata) })
     }
 
     public static func descriptor(for id: UsageProvider) -> ProviderDescriptor {
         self.ensureBootstrapped()
         if let found = self.store.byID[id] { return found }
+        if let found = descriptorsByID[id] { return found }
         if let found = self.all.first(where: { $0.id == id }) { return found }
         fatalError("Missing ProviderDescriptor for \(id.rawValue)")
     }

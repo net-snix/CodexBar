@@ -19,15 +19,8 @@ struct ProviderRegistryTests {
     }
 
     @Test
-    func minimaxSortsAfterZaiInRegistry() {
+    func codexOnlyRegistryOrder() {
         let ids = ProviderDescriptorRegistry.all.map(\.id)
-        guard let zaiIndex = ids.firstIndex(of: .zai),
-              let minimaxIndex = ids.firstIndex(of: .minimax)
-        else {
-            Issue.record("Missing z.ai or MiniMax provider in registry order.")
-            return
-        }
-
-        #expect(zaiIndex < minimaxIndex)
+        #expect(ids == [.codex], "Codex-only mode should expose only Codex in registry order.")
     }
 }

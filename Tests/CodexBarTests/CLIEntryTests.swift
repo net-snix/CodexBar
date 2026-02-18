@@ -78,9 +78,11 @@ struct CLIEntryTests {
     func providerSelectionFallsBackToBothForPrimaryPair() {
         let selection = CodexBarCLI.providerSelection(rawOverride: nil, enabled: [.codex, .claude])
         switch selection {
-        case .both:
-            break
-        default:
+        case let .single(provider):
+            #expect(provider == .codex)
+        case let .custom(providers):
+            #expect(providers == [.codex])
+        case .all, .both:
             #expect(Bool(false))
         }
     }
@@ -89,9 +91,11 @@ struct CLIEntryTests {
     func providerSelectionFallsBackToCustomWhenNonPrimary() {
         let selection = CodexBarCLI.providerSelection(rawOverride: nil, enabled: [.codex, .gemini])
         switch selection {
+        case let .single(provider):
+            #expect(provider == .codex)
         case let .custom(providers):
-            #expect(providers == [.codex, .gemini])
-        default:
+            #expect(providers == [.codex])
+        case .all, .both:
             #expect(Bool(false))
         }
     }

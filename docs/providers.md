@@ -8,6 +8,10 @@ read_when:
 
 # Providers
 
+## Current mode (this branch)
+- Codex-only runtime: provider iteration, refresh loops, and CLI provider selection are restricted to Codex.
+- Legacy provider notes below are retained as reference while codex-only cleanup continues.
+
 ## Fetch strategies (current)
 Legend: web (browser cookies/WebView), cli (RPC/PTy), oauth (API), api token, local probe, web dashboard.
 Source labels (CLI/header): `openai-web`, `web`, `oauth`, `api`, `local`, plus provider-specific CLI labels (e.g. `codex-cli`, `claude`).

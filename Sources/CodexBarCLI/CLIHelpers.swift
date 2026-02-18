@@ -17,16 +17,20 @@ extension CodexBarCLI {
         if let rawOverride, let parsed = ProviderSelection(argument: rawOverride) {
             return parsed
         }
-        if enabled.count >= 3 { return .all }
-        if enabled.count == 2 {
-            let enabledSet = Set(enabled)
+
+        let supported = Set(ProviderDescriptorRegistry.all.map(\.id))
+        let supportedEnabled = enabled.filter { supported.contains($0) }
+
+        if supportedEnabled.count >= 3 { return .all }
+        if supportedEnabled.count == 2 {
+            let enabledSet = Set(supportedEnabled)
             let primary = Set(ProviderDescriptorRegistry.all.filter(\ .metadata.isPrimaryProvider).map(\ .id))
             if !primary.isEmpty, enabledSet == primary {
                 return .both
             }
-            return .custom(enabled)
+            return .custom(supportedEnabled)
         }
-        if let first = enabled.first { return ProviderSelection(provider: first) }
+        if let first = supportedEnabled.first { return ProviderSelection(provider: first) }
         return .single(.codex)
     }
 

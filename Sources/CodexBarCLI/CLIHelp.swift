@@ -19,11 +19,8 @@ extension CodexBarCLI {
         Description:
           Print usage from enabled providers as text (default) or JSON. Honors your in-app toggles.
           Output format: use --json (or --format json) for JSON on stdout; use --json-output for JSON logs on stderr.
-          When --source is auto/web (macOS only), CodexBar uses browser cookies to fetch web-backed data:
-          - Codex: OpenAI web dashboard (usage limits, credits remaining, code review remaining, usage breakdown).
-            Auto falls back to Codex CLI only when cookies are missing.
-          - Claude: claude.ai API.
-            Auto falls back to Claude CLI only when cookies are missing.
+          When --source is auto/web (macOS only), CodexBar uses browser cookies to fetch Codex OpenAI web data.
+          Auto falls back to Codex CLI only when cookies are missing.
           Token accounts are loaded from ~/.codexbar/config.json.
           Use --account or --account-index to select a specific token account, or --all-accounts to fetch all.
           Account selection requires a single provider.
@@ -38,8 +35,7 @@ extension CodexBarCLI {
 
         Examples:
           codexbar usage
-          codexbar usage --provider claude
-          codexbar usage --provider gemini
+          codexbar usage --provider codex
           codexbar usage --format json --provider all --pretty
           codexbar usage --provider all --json
           codexbar usage --status
@@ -60,12 +56,12 @@ extension CodexBarCLI {
                        [--no-color] [--pretty] [--refresh]
 
         Description:
-          Print local token cost usage from Claude/Codex JSONL logs. This does not require web or CLI access.
+          Print local token cost usage from Codex JSONL logs. This does not require web or CLI access.
           Uses cached scan results unless --refresh is provided.
 
         Examples:
           codexbar cost
-          codexbar cost --provider claude --format json --pretty
+          codexbar cost --provider codex --format json --pretty
         """
     }
 
@@ -133,8 +129,8 @@ extension CodexBarCLI {
           codexbar
           codexbar --format json --provider all --pretty
           codexbar --provider all --json
-          codexbar --provider gemini
-          codexbar cost --provider claude --format json --pretty
+          codexbar --provider codex
+          codexbar cost --provider codex --format json --pretty
           codexbar config validate --format json --pretty
         """
     }

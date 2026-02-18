@@ -33,23 +33,23 @@ struct SettingsStoreAdditionalTests {
     }
 
     @Test
-    func tokenAccountsSetManualCookieSourceWhenRequired() {
+    func tokenAccountsDoNotMutateUnsupportedCookieSourceInCodexOnlyMode() {
         let settings = Self.makeSettingsStore(suite: "SettingsStoreAdditionalTests-token-accounts")
 
         settings.addTokenAccount(provider: .claude, label: "Primary", token: "token-1")
 
         #expect(settings.tokenAccounts(for: .claude).count == 1)
-        #expect(settings.claudeCookieSource == .manual)
+        #expect(settings.claudeCookieSource == .auto)
     }
 
     @Test
-    func ollamaTokenAccountsSetManualCookieSourceWhenRequired() {
+    func ollamaTokenAccountsDoNotMutateCookieSourceInCodexOnlyMode() {
         let settings = Self.makeSettingsStore(suite: "SettingsStoreAdditionalTests-ollama-token-accounts")
 
         settings.addTokenAccount(provider: .ollama, label: "Primary", token: "session=token-1")
 
         #expect(settings.tokenAccounts(for: .ollama).count == 1)
-        #expect(settings.ollamaCookieSource == .manual)
+        #expect(settings.ollamaCookieSource == .auto)
     }
 
     @Test

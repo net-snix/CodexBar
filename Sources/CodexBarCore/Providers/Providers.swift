@@ -24,6 +24,10 @@ public enum UsageProvider: String, CaseIterable, Sendable, Codable {
     case synthetic
     case warp
     case openrouter
+
+    public static var allCases: [UsageProvider] {
+        [.codex]
+    }
 }
 
 // swiftformat:enable sortDeclarations

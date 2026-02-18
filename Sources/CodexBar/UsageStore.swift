@@ -196,6 +196,9 @@ final class UsageStore {
     @ObservationIgnored private var hasCompletedInitialRefresh: Bool = false
     @ObservationIgnored private let tokenFetchTTL: TimeInterval = 60 * 60
     @ObservationIgnored private let tokenFetchTimeout: TimeInterval = 10 * 60
+    @ObservationIgnored var lastWidgetSnapshotSignature: String?
+    @ObservationIgnored var lastWidgetTimelineReloadAt: Date?
+    @ObservationIgnored let widgetTimelineReloadMinimumInterval: TimeInterval = 60
 
     init(
         fetcher: UsageFetcher,
@@ -335,7 +338,7 @@ final class UsageStore {
     }
 
     func metadata(for provider: UsageProvider) -> ProviderMetadata {
-        self.providerMetadata[provider]!
+        self.providerMetadata[provider] ?? ProviderDescriptorRegistry.descriptor(for: provider).metadata
     }
 
     private var codexBrowserCookieOrder: BrowserCookieImportOrder {
@@ -443,11 +446,10 @@ final class UsageStore {
             }
 
             await withTaskGroup(of: Void.self) { group in
-                for provider in UsageProvider.allCases {
+                for provider in self.enabledProviders() {
                     group.addTask { await self.refreshProvider(provider) }
                     group.addTask { await self.refreshStatus(provider) }
                 }
-                group.addTask { await self.refreshCreditsIfNeeded() }
             }
 
             // Token-cost usage can be slow; run it outside the refresh group so we don't block menu updates.
@@ -459,7 +461,6 @@ final class UsageStore {
 
             if self.openAIDashboardRequiresLogin {
                 await self.refreshProvider(.codex)
-                await self.refreshCreditsIfNeeded()
             }
 
             self.persistWidgetSnapshot(reason: "refresh")
@@ -525,7 +526,7 @@ final class UsageStore {
                     self?.tokenRefreshSequenceTask = nil
                 }
             }
-            for provider in UsageProvider.allCases {
+            for provider in self.enabledProviders() {
                 if Task.isCancelled { break }
                 await self.refreshTokenUsage(provider, force: force)
             }
@@ -596,6 +597,7 @@ final class UsageStore {
 
     private func refreshStatus(_ provider: UsageProvider) async {
         guard self.settings.statusChecksEnabled else { return }
+        guard self.isEnabled(provider) else { return }
         guard let meta = self.providerMetadata[provider] else { return }
 
         do {
@@ -621,44 +623,17 @@ final class UsageStore {
         }
     }
 
-    private func refreshCreditsIfNeeded() async {
-        guard self.isEnabled(.codex) else { return }
-        do {
-            let credits = try await self.codexFetcher.loadLatestCredits(
-                keepCLISessionsAlive: self.settings.debugKeepCLISessionsAlive)
-            await MainActor.run {
-                self.credits = credits
-                self.lastCreditsError = nil
-                self.lastCreditsSnapshot = credits
-                self.creditsFailureStreak = 0
-            }
-        } catch {
-            let message = error.localizedDescription
-            if message.localizedCaseInsensitiveContains("data not available yet") {
-                await MainActor.run {
-                    if let cached = self.lastCreditsSnapshot {
-                        self.credits = cached
-                        self.lastCreditsError = nil
-                    } else {
-                        self.credits = nil
-                        self.lastCreditsError = "Codex credits are still loading; will retry shortly."
-                    }
-                }
-                return
-            }
+    func applyCodexCredits(_ credits: CreditsSnapshot?) {
+        if let credits {
+            self.credits = credits
+            self.lastCreditsError = nil
+            self.lastCreditsSnapshot = credits
+            self.creditsFailureStreak = 0
+            return
+        }
 
-            await MainActor.run {
-                self.creditsFailureStreak += 1
-                if let cached = self.lastCreditsSnapshot {
-                    self.credits = cached
-                    let stamp = cached.updatedAt.formatted(date: .abbreviated, time: .shortened)
-                    self.lastCreditsError =
-                        "Last Codex credits refresh failed: \(message). Cached values from \(stamp)."
-                } else {
-                    self.lastCreditsError = message
-                    self.credits = nil
-                }
-            }
+        if self.credits == nil {
+            self.lastCreditsError = "Codex credits unavailable for the selected source."
         }
     }
 }
@@ -1545,7 +1520,6 @@ extension UsageStore {
         self.tokenErrors.removeAll()
         self.lastTokenFetchAt.removeAll()
         self.tokenFailureGates[.codex]?.reset()
-        self.tokenFailureGates[.claude]?.reset()
         return nil
     }
 

@@ -1,6 +1,18 @@
 # CodexBar 🎚️ - May your tokens never run out.
 
-Tiny macOS 14+ menu bar app that keeps your Codex, Claude, Cursor, Gemini, Antigravity, Droid (Factory), Copilot, z.ai, Kiro, Vertex AI, Augment, Amp, JetBrains AI, and OpenRouter limits visible (session + weekly where available) and shows when each window resets. One status item per provider (or Merge Icons mode); enable what you use from Settings. No Dock icon, minimal UI, dynamic bar icons in the menu bar.
+Tiny macOS 14+ menu bar app focused on Codex usage stats (session + weekly where available), credits, and reset windows. No Dock icon, minimal UI, dynamic bar icons in the menu bar.
+
+## Fork differences (`net-snix/CodexBar`)
+
+This fork intentionally diverges from upstream:
+
+- Codex-only runtime focus: non-Codex providers are not part of the active product surface.
+- Performance and battery focus: refresh/status/token loops are constrained to Codex paths.
+- Credits fetch deduped into provider refresh flow to reduce redundant work.
+- Widget timeline reloads are throttled and snapshot-diffed to avoid unnecessary churn.
+- CLI defaults and help text are being aligned with Codex-only behavior.
+
+Upstream provider docs remain in the repository for reference while fork cleanup continues.
 
 <img src="codexbar.png" alt="CodexBar menu screenshot" width="520" />
 
@@ -10,7 +22,7 @@ Tiny macOS 14+ menu bar app that keeps your Codex, Claude, Cursor, Gemini, Antig
 - macOS 14+ (Sonoma)
 
 ### GitHub Releases
-Download: <https://github.com/steipete/CodexBar/releases>
+Download: <https://github.com/net-snix/CodexBar/releases>
 
 ### Homebrew
 ```bash

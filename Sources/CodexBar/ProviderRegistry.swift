@@ -49,7 +49,7 @@ struct ProviderRegistry {
                     return ProviderFetchContext(
                         runtime: .app,
                         sourceMode: sourceMode,
-                        includeCredits: false,
+                        includeCredits: provider == .codex,
                         webTimeout: 60,
                         webDebugDumpHTML: false,
                         verbose: verbose,
