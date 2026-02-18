@@ -30,6 +30,22 @@ SwiftPM-only; package/sign/notarize manually (no Xcode project). Sparkle feed is
 - Sparkle keys: public key already in Info.plist; private key path set via `SPARKLE_PRIVATE_KEY_FILE` when generating appcast.
 - Ensure shell has release env vars loaded (usually `source ~/.profile`) before running `Scripts/release.sh`.
 
+## GitHub Actions (macOS release)
+
+Workflow: `.github/workflows/release-macos.yml`
+
+- Triggered on:
+  - Release published (`release.published`) -> uploads signed/notarized macOS assets to that release.
+  - Manual run (`workflow_dispatch`) -> uploads artifacts to the workflow run.
+- Required repository secrets:
+  - `APPLE_DEVELOPER_ID_CERT_P12_BASE64` (base64-encoded Developer ID `.p12`)
+  - `APPLE_DEVELOPER_ID_CERT_PASSWORD`
+  - `APP_IDENTITY` (optional if autodetect works; recommended)
+  - `APP_STORE_CONNECT_API_KEY_P8`
+  - `APP_STORE_CONNECT_KEY_ID`
+  - `APP_STORE_CONNECT_ISSUER_ID`
+  - `SPARKLE_PRIVATE_KEY`
+
 ## Icon (glass .icon → .icns)
 ```
 ./Scripts/build_icon.sh Icon.icon CodexBar

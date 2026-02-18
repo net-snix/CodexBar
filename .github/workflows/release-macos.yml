@@ -1,0 +1,122 @@
+name: Release macOS App
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos-release:
+    runs-on: macos-14
+    env:
+      APP_STORE_CONNECT_API_KEY_P8: ${{ secrets.APP_STORE_CONNECT_API_KEY_P8 }}
+      APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Select Xcode 26.1.1 (if present) or fallback to default
+        shell: bash
+        run: |
+          set -euo pipefail
+          for candidate in /Applications/Xcode_26.1.1.app /Applications/Xcode_26.1.app /Applications/Xcode.app; do
+            if [[ -d "$candidate" ]]; then
+              sudo xcode-select -s "${candidate}/Contents/Developer"
+              echo "DEVELOPER_DIR=${candidate}/Contents/Developer" >> "$GITHUB_ENV"
+              break
+            fi
+          done
+          /usr/bin/xcodebuild -version
+          swift --version
+
+      - name: Import Developer ID signing certificate
+        shell: bash
+        env:
+          CERT_P12_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERT_P12_BASE64 }}
+          CERT_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASSWORD }}
+          APP_IDENTITY: ${{ secrets.APP_IDENTITY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${CERT_P12_BASE64:-}" || -z "${CERT_P12_PASSWORD:-}" ]]; then
+            echo "Missing signing secrets: APPLE_DEVELOPER_ID_CERT_P12_BASE64 / APPLE_DEVELOPER_ID_CERT_PASSWORD" >&2
+            exit 1
+          fi
+
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          KEYCHAIN_PATH="$RUNNER_TEMP/codexbar-signing.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/developer-id.p12"
+
+          echo "$CERT_P12_BASE64" | base64 --decode > "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" -P "$CERT_P12_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          EXISTING_KEYCHAINS=$(security list-keychains -d user | tr -d '"' | xargs)
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $EXISTING_KEYCHAINS
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+
+          if [[ -z "${APP_IDENTITY:-}" ]]; then
+            APP_IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | awk -F '"' '/Developer ID Application/ {print $2; exit}')"
+          fi
+          if [[ -z "${APP_IDENTITY:-}" ]]; then
+            echo "Could not resolve APP_IDENTITY. Set APP_IDENTITY secret." >&2
+            security find-identity -v -p codesigning "$KEYCHAIN_PATH" || true
+            exit 1
+          fi
+          echo "APP_IDENTITY=$APP_IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Write Sparkle key to file
+        shell: bash
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SPARKLE_PRIVATE_KEY:-}" ]]; then
+            echo "Missing SPARKLE_PRIVATE_KEY secret." >&2
+            exit 1
+          fi
+          SPARKLE_KEY_FILE="$RUNNER_TEMP/sparkle-private-key.txt"
+          printf '%s\n' "$SPARKLE_PRIVATE_KEY" > "$SPARKLE_KEY_FILE"
+          chmod 600 "$SPARKLE_KEY_FILE"
+          echo "SPARKLE_PRIVATE_KEY_FILE=$SPARKLE_KEY_FILE" >> "$GITHUB_ENV"
+
+      - name: Build, sign, notarize, package
+        shell: bash
+        run: ./Scripts/sign-and-notarize.sh
+
+      - name: Resolve release artifact names
+        id: artifact_names
+        shell: bash
+        run: |
+          set -euo pipefail
+          source ./version.env
+          echo "zip=CodexBar-${MARKETING_VERSION}.zip" >> "$GITHUB_OUTPUT"
+          echo "dsym=CodexBar-${MARKETING_VERSION}.dSYM.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Upload assets to published release
+        if: github.event_name == 'release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          gh release upload "$TAG" \
+            "${{ steps.artifact_names.outputs.zip }}" \
+            "${{ steps.artifact_names.outputs.dsym }}" \
+            --clobber
+
+      - name: Upload workflow artifacts (manual runs)
+        if: github.event_name != 'release'
+        uses: actions/upload-artifact@v6
+        with:
+          name: codexbar-macos-release
+          path: |
+            ${{ steps.artifact_names.outputs.zip }}
+            ${{ steps.artifact_names.outputs.dsym }}
