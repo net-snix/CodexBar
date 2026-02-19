@@ -153,24 +153,18 @@ extension SettingsStore {
             }
             return
         }
+        let snapshot = self.config
         let store = self.configStore
-        self.configPersistTask = Task { @MainActor in
+        self.configPersistTask = Task.detached(priority: .utility) {
             do {
                 try await Task.sleep(nanoseconds: 350_000_000)
             } catch {
                 return
             }
             guard !Task.isCancelled else { return }
-            let snapshot = self.config
-            let error: (any Error)? = await Task.detached(priority: .utility) {
-                do {
-                    try store.save(snapshot)
-                    return nil
-                } catch {
-                    return error
-                }
-            }.value
-            if let error {
+            do {
+                try store.save(snapshot)
+            } catch {
                 CodexBarLog.logger(LogCategories.configStore).error("Failed to persist config: \(error)")
             }
         }

@@ -440,6 +440,7 @@ extension StatusItemController {
                 guard let self, let menu else { return }
                 self.selectedMenuProvider = provider
                 self.lastMenuProvider = provider
+                self.menuContentVersion &+= 1
                 self.populateMenu(menu, provider: provider)
                 self.markMenuFresh(menu)
                 self.applyIcon(phase: nil)
@@ -466,6 +467,7 @@ extension StatusItemController {
                         await self.store.refresh()
                     }
                 }
+                self.menuContentVersion &+= 1
                 self.populateMenu(menu, provider: display.provider)
                 self.markMenuFresh(menu)
                 self.applyIcon(phase: nil)
@@ -578,10 +580,13 @@ extension StatusItemController {
         let cardItems = menu.items.filter { item in
             (item.representedObject as? String)?.hasPrefix("menuCard") == true
         }
+        let width = self.menuCardWidth(for: self.store.enabledProviders(), menu: menu)
         for item in cardItems {
-            guard let view = item.view else { continue }
-            let width = self.menuCardWidth(for: self.store.enabledProviders(), menu: menu)
-            let height = self.menuCardHeight(for: view, width: width)
+            guard let id = item.representedObject as? String, let view = item.view else { continue }
+            let key = self.menuCardHeightCacheKey(id: id, width: width)
+            let height = self.cachedMenuCardHeight(for: key) {
+                self.menuCardHeight(for: view, width: width)
+            }
             view.frame = NSRect(
                 origin: .zero,
                 size: NSSize(width: width, height: height))
@@ -614,8 +619,10 @@ extension StatusItemController {
             view
         }
         let hosting = MenuCardItemHostingView(rootView: wrapped, highlightState: highlightState)
-        // Set frame with target width immediately
-        let height = self.menuCardHeight(for: hosting, width: width)
+        let cacheKey = self.menuCardHeightCacheKey(id: id, width: width)
+        let height = self.cachedMenuCardHeight(for: cacheKey) {
+            self.menuCardHeight(for: hosting, width: width)
+        }
         hosting.frame = NSRect(origin: .zero, size: NSSize(width: width, height: height))
         let item = NSMenuItem()
         item.view = hosting
@@ -645,6 +652,30 @@ extension StatusItemController {
         let fitted = view.fittingSize
 
         return max(1, ceil(fitted.height + basePadding + descenderSafety))
+    }
+
+    private func menuCardHeightCacheKey(id: String, width: CGFloat) -> MenuCardHeightCacheKey {
+        MenuCardHeightCacheKey(
+            id: id,
+            widthBucket: Int((width * 10).rounded()),
+            contentVersion: self.menuContentVersion)
+    }
+
+    private func cachedMenuCardHeight(for key: MenuCardHeightCacheKey, build: () -> CGFloat) -> CGFloat {
+        if let cached = self.menuCardHeightCache[key] {
+            self.menuCardHeightOrder.removeAll { $0 == key }
+            self.menuCardHeightOrder.append(key)
+            return cached
+        }
+        let height = build()
+        self.menuCardHeightCache[key] = height
+        self.menuCardHeightOrder.removeAll { $0 == key }
+        self.menuCardHeightOrder.append(key)
+        while self.menuCardHeightOrder.count > Self.menuCardHeightCacheLimit {
+            let oldest = self.menuCardHeightOrder.removeFirst()
+            self.menuCardHeightCache.removeValue(forKey: oldest)
+        }
+        return height
     }
 
     private func addMenuCardSections(
@@ -847,6 +878,7 @@ extension StatusItemController {
     private final class MenuCardItemHostingView<Content: View>: NSHostingView<Content>, MenuCardHighlighting,
     MenuCardMeasuring {
         private let highlightState: MenuCardHighlightState
+        private var measuredHeightByWidth: [Int: CGFloat] = [:]
         override var allowsVibrancy: Bool {
             true
         }
@@ -873,8 +905,13 @@ extension StatusItemController {
         }
 
         func measuredHeight(width: CGFloat) -> CGFloat {
+            let bucket = Int((width * 10).rounded())
+            if let cached = self.measuredHeightByWidth[bucket] {
+                return cached
+            }
             let controller = NSHostingController(rootView: self.rootView)
             let measured = controller.sizeThatFits(in: CGSize(width: width, height: .greatestFiniteMagnitude))
+            self.measuredHeightByWidth[bucket] = measured.height
             return measured.height
         }
 

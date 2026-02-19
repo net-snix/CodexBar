@@ -364,28 +364,28 @@ public struct OpenAIDashboardBrowserCookieImporter {
         log: @escaping (String) -> Void,
         diagnostics: inout ImportDiagnostics) async -> ImportResult?
     {
-        switch source {
-        case .safari:
-            await self.trySafari(
+        if source == .safari {
+            return await self.trySafari(
                 targetEmail: targetEmail,
                 allowAnyAccount: allowAnyAccount,
                 log: log,
                 diagnostics: &diagnostics)
-        case .chrome:
-            await self.tryChrome(
-                targetEmail: targetEmail,
-                allowAnyAccount: allowAnyAccount,
-                log: log,
-                diagnostics: &diagnostics)
-        case .firefox:
-            await self.tryFirefox(
-                targetEmail: targetEmail,
-                allowAnyAccount: allowAnyAccount,
-                log: log,
-                diagnostics: &diagnostics)
-        default:
-            nil
         }
+        if source == .chrome {
+            return await self.tryChrome(
+                targetEmail: targetEmail,
+                allowAnyAccount: allowAnyAccount,
+                log: log,
+                diagnostics: &diagnostics)
+        }
+        if source == .firefox {
+            return await self.tryFirefox(
+                targetEmail: targetEmail,
+                allowAnyAccount: allowAnyAccount,
+                log: log,
+                diagnostics: &diagnostics)
+        }
+        return nil
     }
 
     private func applyCandidate(

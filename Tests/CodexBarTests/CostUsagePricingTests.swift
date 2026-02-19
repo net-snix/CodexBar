@@ -8,6 +8,8 @@ struct CostUsagePricingTests {
         #expect(CostUsagePricing.normalizeCodexModel("openai/gpt-5-codex") == "gpt-5")
         #expect(CostUsagePricing.normalizeCodexModel("gpt-5.2-codex") == "gpt-5.2")
         #expect(CostUsagePricing.normalizeCodexModel("gpt-5.1-codex-max") == "gpt-5.1")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex") == "gpt-5.3")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-spark") == "gpt-5.3")
     }
 
     @Test
@@ -18,6 +20,34 @@ struct CostUsagePricingTests {
             cachedInputTokens: 10,
             outputTokens: 5)
         #expect(cost != nil)
+    }
+
+    @Test
+    func codexCostSupportsGpt53VariantsAndMatchesGpt52Rate() {
+        let input = 123_456
+        let cached = 78901
+        let output = 3210
+
+        let gpt52 = CostUsagePricing.codexCostUSD(
+            model: "gpt-5.2-codex",
+            inputTokens: input,
+            cachedInputTokens: cached,
+            outputTokens: output)
+        let gpt53Codex = CostUsagePricing.codexCostUSD(
+            model: "gpt-5.3-codex",
+            inputTokens: input,
+            cachedInputTokens: cached,
+            outputTokens: output)
+        let gpt53Spark = CostUsagePricing.codexCostUSD(
+            model: "gpt-5.3-codex-spark",
+            inputTokens: input,
+            cachedInputTokens: cached,
+            outputTokens: output)
+
+        #expect(gpt53Codex != nil)
+        #expect(gpt53Spark != nil)
+        #expect(gpt53Codex == gpt52)
+        #expect(gpt53Spark == gpt52)
     }
 
     @Test

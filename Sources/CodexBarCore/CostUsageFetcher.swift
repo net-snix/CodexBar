@@ -18,7 +18,29 @@ public enum CostUsageError: LocalizedError, Sendable {
 }
 
 public struct CostUsageFetcher: Sendable {
-    public init() {}
+    typealias DailyReportLoader = @Sendable (
+        UsageProvider,
+        Date,
+        Date,
+        Date,
+        CostUsageScanner.Options) -> CostUsageDailyReport
+
+    private let dailyReportLoader: DailyReportLoader
+
+    public init() {
+        self.dailyReportLoader = { provider, since, until, now, options in
+            CostUsageScanner.loadDailyReport(
+                provider: provider,
+                since: since,
+                until: until,
+                now: now,
+                options: options)
+        }
+    }
+
+    init(dailyReportLoader: @escaping DailyReportLoader) {
+        self.dailyReportLoader = dailyReportLoader
+    }
 
     public func loadTokenSnapshot(
         provider: UsageProvider,
@@ -44,12 +66,15 @@ public struct CostUsageFetcher: Sendable {
             options.refreshMinIntervalSeconds = 0
             options.forceRescan = true
         }
-        var daily = CostUsageScanner.loadDailyReport(
+        let primaryFilter = Self.effectiveClaudeLogProviderFilter(
             provider: provider,
-            since: since,
-            until: until,
-            now: now,
-            options: options)
+            requested: options.claudeLogProviderFilter)
+        var daily = self.dailyReportLoader(
+            provider,
+            since,
+            until,
+            now,
+            options)
 
         if provider == .vertexai,
            !allowVertexClaudeFallback,
@@ -58,15 +83,30 @@ public struct CostUsageFetcher: Sendable {
         {
             var fallback = options
             fallback.claudeLogProviderFilter = .all
-            daily = CostUsageScanner.loadDailyReport(
+            let fallbackFilter = Self.effectiveClaudeLogProviderFilter(
                 provider: provider,
-                since: since,
-                until: until,
-                now: now,
-                options: fallback)
+                requested: fallback.claudeLogProviderFilter)
+            if fallbackFilter != primaryFilter {
+                daily = self.dailyReportLoader(
+                    provider,
+                    since,
+                    until,
+                    now,
+                    fallback)
+            }
         }
 
         return Self.tokenSnapshot(from: daily, now: now)
+    }
+
+    static func effectiveClaudeLogProviderFilter(
+        provider: UsageProvider,
+        requested: CostUsageScanner.ClaudeLogProviderFilter) -> CostUsageScanner.ClaudeLogProviderFilter
+    {
+        if provider == .vertexai, requested == .all {
+            return .vertexAIOnly
+        }
+        return requested
     }
 
     static func tokenSnapshot(from daily: CostUsageDailyReport, now: Date) -> CostUsageTokenSnapshot {

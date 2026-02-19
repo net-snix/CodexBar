@@ -3,6 +3,9 @@ import SweetCookieKit
 #if canImport(FoundationNetworking)
 import FoundationNetworking
 #endif
+#if os(macOS)
+import os.lock
+#endif
 
 /// Fetches Claude usage data directly from the claude.ai API using browser session cookies.
 ///
@@ -12,13 +15,36 @@ import FoundationNetworking
 /// API endpoints used:
 /// - `GET https://claude.ai/api/organizations` → get org UUID
 /// - `GET https://claude.ai/api/organizations/{org_id}/usage` → usage percentages + reset times
-public enum ClaudeWebAPIFetcher {
+public enum ClaudeWebAPIFetcher { // swiftlint:disable:this type_body_length
     private static let baseURL = "https://claude.ai/api"
     private static let maxProbeBytes = 200_000
     #if os(macOS)
     private static let cookieClient = BrowserCookieClient()
     private static let cookieImportOrder: BrowserCookieImportOrder =
         ProviderDefaults.metadata[.claude]?.browserCookieOrder ?? Browser.defaultImportOrder
+
+    private struct SessionCookieSource {
+        let sourceLabel: String
+        let cookies: [(name: String, value: String)]
+    }
+
+    private struct SessionKeyCacheKey: Hashable {
+        let browsers: [Browser]
+    }
+
+    private struct SessionKeyCacheEntry {
+        let result: Result<SessionKeyInfo, FetchError>
+        let storedAt: Date
+    }
+
+    private struct SessionKeyCacheState {
+        var entries: [SessionKeyCacheKey: SessionKeyCacheEntry] = [:]
+        var ttlOverride: TimeInterval?
+    }
+
+    private static let defaultSessionKeyCacheTTL: TimeInterval = 5
+    private static let maxSessionKeyCacheEntries = 8
+    private static let sessionKeyCache = OSAllocatedUnfairLock<SessionKeyCacheState>(initialState: .init())
     #else
     private static let cookieImportOrder: BrowserCookieImportOrder = []
     #endif
@@ -145,6 +171,7 @@ public enum ClaudeWebAPIFetcher {
                 switch error {
                 case .unauthorized, .noSessionKeyFound, .invalidSessionKey:
                     CookieHeaderCache.clear(provider: .claude)
+                    self.clearSessionKeyInfoCache()
                 default:
                     throw error
                 }
@@ -156,12 +183,22 @@ public enum ClaudeWebAPIFetcher {
         let sessionInfo = try extractSessionKeyInfo(browserDetection: browserDetection, logger: log)
         log("Found session key (\(sessionInfo.cookieCount) cookies)")
 
-        let usage = try await self.fetchUsage(using: sessionInfo, logger: log)
-        CookieHeaderCache.store(
-            provider: .claude,
-            cookieHeader: "sessionKey=\(sessionInfo.key)",
-            sourceLabel: sessionInfo.sourceLabel)
-        return usage
+        do {
+            let usage = try await self.fetchUsage(using: sessionInfo, logger: log)
+            CookieHeaderCache.store(
+                provider: .claude,
+                cookieHeader: "sessionKey=\(sessionInfo.key)",
+                sourceLabel: sessionInfo.sourceLabel)
+            return usage
+        } catch let error as FetchError {
+            switch error {
+            case .unauthorized, .invalidSessionKey:
+                self.clearSessionKeyInfoCache()
+            default:
+                break
+            }
+            throw error
+        }
     }
 
     public static func fetchUsage(
@@ -342,28 +379,47 @@ public enum ClaudeWebAPIFetcher {
         browserDetection: BrowserDetection,
         logger: ((String) -> Void)? = nil) throws -> SessionKeyInfo
     {
-        let log: (String) -> Void = { msg in logger?(msg) }
-
-        let cookieDomains = ["claude.ai"]
-
         // Filter to cookie-eligible browsers to avoid unnecessary keychain prompts
         let installedBrowsers = Self.cookieImportOrder.cookieImportCandidates(using: browserDetection)
+        return try self.extractSessionKeyInfo(
+            installedBrowsers: installedBrowsers,
+            now: Date(),
+            logger: logger,
+            sourceLoader: self.loadSessionCookieSources)
+    }
+
+    private static func extractSessionKeyInfo(
+        installedBrowsers: [Browser],
+        now: Date,
+        logger: ((String) -> Void)? = nil,
+        sourceLoader: (Browser, @escaping (String) -> Void) throws -> [SessionCookieSource]) throws -> SessionKeyInfo
+    {
+        let log: (String) -> Void = { msg in logger?(msg) }
+        let cacheKey = SessionKeyCacheKey(browsers: installedBrowsers)
+
+        if let cached = self.cachedSessionKeyResult(for: cacheKey, now: now) {
+            switch cached {
+            case let .success(info):
+                log("Using cached sessionKey from \(info.sourceLabel)")
+                return info
+            case let .failure(error):
+                log("Using cached sessionKey miss")
+                throw error
+            }
+        }
+
         for browserSource in installedBrowsers {
             do {
-                let query = BrowserCookieQuery(domains: cookieDomains)
-                let sources = try Self.cookieClient.records(
-                    matching: query,
-                    in: browserSource,
-                    logger: log)
+                let sources = try sourceLoader(browserSource, log)
                 for source in sources {
-                    if let sessionKey = findSessionKey(in: source.records.map { record in
-                        (name: record.name, value: record.value)
-                    }) {
-                        log("Found sessionKey in \(source.label)")
-                        return SessionKeyInfo(
+                    if let sessionKey = findSessionKey(in: source.cookies) {
+                        log("Found sessionKey in \(source.sourceLabel)")
+                        let info = SessionKeyInfo(
                             key: sessionKey,
-                            sourceLabel: source.label,
-                            cookieCount: source.records.count)
+                            sourceLabel: source.sourceLabel,
+                            cookieCount: source.cookies.count)
+                        self.cacheSessionKeyResult(.success(info), for: cacheKey, now: now)
+                        return info
                     }
                 }
             } catch {
@@ -372,7 +428,78 @@ public enum ClaudeWebAPIFetcher {
             }
         }
 
+        self.cacheSessionKeyResult(.failure(.noSessionKeyFound), for: cacheKey, now: now)
         throw FetchError.noSessionKeyFound
+    }
+
+    private static func loadSessionCookieSources(
+        browser: Browser,
+        logger: @escaping (String) -> Void) throws -> [SessionCookieSource]
+    {
+        let query = BrowserCookieQuery(domains: ["claude.ai"])
+        let sources = try Self.cookieClient.records(
+            matching: query,
+            in: browser,
+            logger: logger)
+        return sources.map { source in
+            SessionCookieSource(
+                sourceLabel: source.label,
+                cookies: source.records.map { record in
+                    (name: record.name, value: record.value)
+                })
+        }
+    }
+
+    private static func cachedSessionKeyResult(
+        for key: SessionKeyCacheKey,
+        now: Date) -> Result<SessionKeyInfo, FetchError>?
+    {
+        self.sessionKeyCache.withLock { state in
+            let ttl = state.ttlOverride ?? Self.defaultSessionKeyCacheTTL
+            if ttl <= 0 {
+                state.entries.removeAll()
+                return nil
+            }
+
+            guard let entry = state.entries[key] else { return nil }
+            if now.timeIntervalSince(entry.storedAt) <= ttl {
+                return entry.result
+            }
+            state.entries.removeValue(forKey: key)
+            return nil
+        }
+    }
+
+    private static func cacheSessionKeyResult(
+        _ result: Result<SessionKeyInfo, FetchError>,
+        for key: SessionKeyCacheKey,
+        now: Date)
+    {
+        self.sessionKeyCache.withLock { state in
+            state.entries[key] = SessionKeyCacheEntry(result: result, storedAt: now)
+            let overflow = state.entries.count - Self.maxSessionKeyCacheEntries
+            guard overflow > 0 else { return }
+
+            let keysToRemove = state.entries
+                .sorted { lhs, rhs in
+                    if lhs.value.storedAt == rhs.value.storedAt {
+                        return lhs.key.browsers.count < rhs.key.browsers.count
+                    }
+                    return lhs.value.storedAt < rhs.value.storedAt
+                }
+                .prefix(overflow)
+                .map(\.key)
+
+            for staleKey in keysToRemove {
+                state.entries.removeValue(forKey: staleKey)
+            }
+        }
+    }
+
+    private static func clearSessionKeyInfoCache() {
+        self.sessionKeyCache.withLock { state in
+            state.entries.removeAll()
+        }
     }
 
     private static func findSessionKey(in cookies: [(name: String, value: String)]) -> String? {
@@ -564,6 +691,16 @@ public enum ClaudeWebAPIFetcher {
 
     // MARK: - Test hooks (DEBUG-only)
 
+    struct SessionCookieSourceForTesting: Sendable {
+        let sourceLabel: String
+        let cookies: [(name: String, value: String)]
+
+        init(sourceLabel: String, cookies: [(name: String, value: String)]) {
+            self.sourceLabel = sourceLabel
+            self.cookies = cookies
+        }
+    }
+
     public static func _parseUsageResponseForTesting(_ data: Data) throws -> WebUsageData {
         try self.parseUsageResponse(data)
     }
@@ -578,6 +715,41 @@ public enum ClaudeWebAPIFetcher {
 
     public static func _parseAccountInfoForTesting(_ data: Data, orgId: String?) -> WebAccountInfo? {
         self.parseAccountInfo(data, orgId: orgId)
+    }
+
+    static func _resetSessionKeyInfoCacheForTesting() {
+        self.sessionKeyCache.withLock { state in
+            state.entries.removeAll()
+            state.ttlOverride = nil
+        }
+    }
+
+    static func _setSessionKeyInfoCacheTTLForTesting(_ ttl: TimeInterval?) {
+        self.sessionKeyCache.withLock { state in
+            state.ttlOverride = ttl
+            if let ttl, ttl <= 0 {
+                state.entries.removeAll()
+            }
+        }
+    }
+
+    static func _extractSessionKeyInfoForTesting(
+        installedBrowsers: [Browser],
+        now: Date,
+        logger: ((String) -> Void)? = nil,
+        sourceLoader: (Browser) throws -> [SessionCookieSourceForTesting]) throws -> SessionKeyInfo
+    {
+        try self.extractSessionKeyInfo(
+            installedBrowsers: installedBrowsers,
+            now: now,
+            logger: logger,
+            sourceLoader: { browser, _ in
+                try sourceLoader(browser).map { source in
+                    SessionCookieSource(
+                        sourceLabel: source.sourceLabel,
+                        cookies: source.cookies)
+                }
+            })
     }
     #endif
 

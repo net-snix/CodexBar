@@ -32,6 +32,38 @@ struct OpenAIDashboardWebViewCacheTests {
         OpenAIDashboardWebsiteDataStore.clearCacheForTesting()
     }
 
+    @Test("WKWebsiteDataStore cache should evict least-recently-used account")
+    func dataStoreCacheEvictsLeastRecentlyUsedAccount() {
+        OpenAIDashboardWebsiteDataStore.clearCacheForTesting()
+        defer { OpenAIDashboardWebsiteDataStore.clearCacheForTesting() }
+
+        OpenAIDashboardWebsiteDataStore.configureCacheForTesting(maxEntries: 2, entryTTL: 60 * 60)
+
+        _ = OpenAIDashboardWebsiteDataStore.store(forAccountEmail: "a@example.com")
+        _ = OpenAIDashboardWebsiteDataStore.store(forAccountEmail: "b@example.com")
+        _ = OpenAIDashboardWebsiteDataStore.store(forAccountEmail: "a@example.com")
+        _ = OpenAIDashboardWebsiteDataStore.store(forAccountEmail: "c@example.com")
+
+        #expect(OpenAIDashboardWebsiteDataStore.cacheCountForTesting() == 2)
+        #expect(OpenAIDashboardWebsiteDataStore.isCachedForTesting(email: "a@example.com"))
+        #expect(OpenAIDashboardWebsiteDataStore.isCachedForTesting(email: "c@example.com"))
+        #expect(!OpenAIDashboardWebsiteDataStore.isCachedForTesting(email: "b@example.com"))
+    }
+
+    @Test("WKWebsiteDataStore cache should expire stale entries")
+    func dataStoreCacheExpiresStaleEntries() {
+        OpenAIDashboardWebsiteDataStore.clearCacheForTesting()
+        defer { OpenAIDashboardWebsiteDataStore.clearCacheForTesting() }
+
+        OpenAIDashboardWebsiteDataStore.configureCacheForTesting(maxEntries: 8, entryTTL: 1)
+
+        _ = OpenAIDashboardWebsiteDataStore.store(forAccountEmail: "ttl@example.com")
+        OpenAIDashboardWebsiteDataStore.pruneCacheForTesting(now: Date().addingTimeInterval(2))
+
+        #expect(OpenAIDashboardWebsiteDataStore.cacheCountForTesting() == 0)
+        #expect(!OpenAIDashboardWebsiteDataStore.isCachedForTesting(email: "ttl@example.com"))
+    }
+
     // MARK: - WebView Reuse Tests
 
     @Test("WebView should be cached after release, not destroyed")

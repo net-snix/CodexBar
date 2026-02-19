@@ -4,6 +4,10 @@ import QuartzCore
 
 extension StatusItemController {
     private static let loadingPercentEpsilon = 0.0001
+    private static let motionEpsilon: CGFloat = 0.0001
+    private static let loadingBarWidthPx: CGFloat = 30
+    private static let loadingBlinkBucketCount: CGFloat = 12
+    private static let loadingMorphBucketCount = 200
 
     func needsMenuBarIconAnimation() -> Bool {
         if self.shouldMergeIcons {
@@ -50,9 +54,14 @@ extension StatusItemController {
     }
 
     private func stopBlinking() {
+        let hadTask = self.blinkTask != nil
+        let hadMotion = !self.blinkAmounts.isEmpty || !self.wiggleAmounts.isEmpty || !self.tiltAmounts.isEmpty
         self.blinkTask?.cancel()
         self.blinkTask = nil
         self.blinkAmounts.removeAll()
+        self.wiggleAmounts.removeAll()
+        self.tiltAmounts.removeAll()
+        guard hadTask || hadMotion else { return }
         let phase: Double? = self.needsMenuBarIconAnimation() ? self.animationPhase : nil
         if self.shouldMergeIcons {
             self.applyIcon(phase: phase)
@@ -74,11 +83,20 @@ extension StatusItemController {
         let doubleDelayRange: ClosedRange<TimeInterval> = 0.22...0.34
         // Cache merge state once per tick to avoid repeated enabled-provider lookups.
         let mergeIcons = self.shouldMergeIcons
+        var mergedIconNeedsRefresh = false
 
         for provider in UsageProvider.allCases {
+            let previous = self.motionSnapshot(for: provider)
             let shouldRender = mergeIcons ? self.isEnabled(provider) : self.isVisible(provider)
             guard shouldRender, !self.shouldAnimate(provider: provider, mergeIcons: mergeIcons) else {
                 self.clearMotion(for: provider)
+                if self.motionChanged(previous, self.motionSnapshot(for: provider)) {
+                    if mergeIcons {
+                        mergedIconNeedsRefresh = true
+                    } else {
+                        self.applyIcon(for: provider, phase: nil)
+                    }
+                }
                 continue
             }
 
@@ -119,14 +137,30 @@ extension StatusItemController {
             }
 
             self.blinkStates[provider] = state
-            if !mergeIcons {
+            let changed = self.motionChanged(previous, self.motionSnapshot(for: provider))
+            if changed, !mergeIcons {
                 self.applyIcon(for: provider, phase: nil)
+            } else if changed {
+                mergedIconNeedsRefresh = true
             }
         }
-        if mergeIcons {
+        if mergeIcons, mergedIconNeedsRefresh {
             let phase: Double? = self.needsMenuBarIconAnimation() ? self.animationPhase : nil
             self.applyIcon(phase: phase)
         }
+    }
+
+    private func motionSnapshot(for provider: UsageProvider) -> (blink: CGFloat, wiggle: CGFloat, tilt: CGFloat) {
+        (self.blinkAmounts[provider] ?? 0, self.wiggleAmounts[provider] ?? 0, self.tiltAmounts[provider] ?? 0)
+    }
+
+    private func motionChanged(
+        _ previous: (blink: CGFloat, wiggle: CGFloat, tilt: CGFloat),
+        _ current: (blink: CGFloat, wiggle: CGFloat, tilt: CGFloat)) -> Bool
+    {
+        abs(previous.blink - current.blink) > Self.motionEpsilon ||
+            abs(previous.wiggle - current.wiggle) > Self.motionEpsilon ||
+            abs(previous.tilt - current.tilt) > Self.motionEpsilon
     }
 
     private func blinkAmount(for provider: UsageProvider) -> CGFloat {
@@ -238,9 +272,13 @@ extension StatusItemController {
             }
         }
 
-        let blink: CGFloat = style == .combined ? 0 : self.blinkAmount(for: primaryProvider)
-        let wiggle: CGFloat = style == .combined ? 0 : self.wiggleAmount(for: primaryProvider)
-        let tilt: CGFloat = style == .combined ? 0 : self.tiltAmount(for: primaryProvider) * .pi / 28
+        let rawBlink: CGFloat = style == .combined ? 0 : self.blinkAmount(for: primaryProvider)
+        let rawWiggle: CGFloat = style == .combined ? 0 : self.wiggleAmount(for: primaryProvider)
+        let rawTilt: CGFloat = style == .combined ? 0 : self.tiltAmount(for: primaryProvider) * .pi / 28
+        let motion = self.filteredMotion(blink: rawBlink, wiggle: rawWiggle, tilt: rawTilt, for: style)
+        let blink = motion.blink
+        let wiggle = motion.wiggle
+        let tilt = motion.tilt
 
         let statusIndicator: ProviderStatusIndicator = {
             for provider in self.store.enabledProviders() {
@@ -260,20 +298,32 @@ extension StatusItemController {
         }
 
         self.setButtonTitle(nil, for: button)
+        let isLoadingFrame = phase != nil && needsAnimation
         if let morphProgress {
-            let image = IconRenderer.makeMorphIcon(progress: morphProgress, style: style)
+            let image = isLoadingFrame
+                ? self.cachedLoadingMorphIcon(progress: morphProgress, style: style)
+                : IconRenderer.makeMorphIcon(progress: morphProgress, style: style)
             self.setButtonImage(image, for: button)
         } else {
-            let image = IconRenderer.makeIcon(
-                primaryRemaining: primary,
-                weeklyRemaining: weekly,
-                creditsRemaining: credits,
-                stale: stale,
-                style: style,
-                blink: blink,
-                wiggle: wiggle,
-                tilt: tilt,
-                statusIndicator: statusIndicator)
+            let image: NSImage = if isLoadingFrame, let primary, let weekly {
+                self.cachedLoadingBarsIcon(
+                    primaryRemaining: primary,
+                    weeklyRemaining: weekly,
+                    style: style,
+                    statusIndicator: statusIndicator,
+                    blink: blink)
+            } else {
+                IconRenderer.makeIcon(
+                    primaryRemaining: primary,
+                    weeklyRemaining: weekly,
+                    creditsRemaining: credits,
+                    stale: stale,
+                    style: style,
+                    blink: blink,
+                    wiggle: wiggle,
+                    tilt: tilt,
+                    statusIndicator: statusIndicator)
+            }
             self.setButtonImage(image, for: button)
         }
     }
@@ -317,7 +367,8 @@ extension StatusItemController {
         var stale = self.store.isStale(provider: provider)
         var morphProgress: Double?
 
-        if let phase, self.shouldAnimate(provider: provider) {
+        let isLoading = phase != nil && self.shouldAnimate(provider: provider)
+        if let phase, isLoading {
             var pattern = self.animationPattern
             if provider == .claude, pattern == .unbraid {
                 pattern = .cylon
@@ -338,32 +389,154 @@ extension StatusItemController {
         }
 
         let style: IconStyle = self.store.style(for: provider)
-        let isLoading = phase != nil && self.shouldAnimate(provider: provider)
-        let blink: CGFloat = {
+        let rawBlink: CGFloat = {
             guard isLoading, style == .warp, let phase else {
                 return self.blinkAmount(for: provider)
             }
             let normalized = (sin(phase * 3) + 1) / 2
             return CGFloat(max(0, min(normalized, 1)))
         }()
-        let wiggle = self.wiggleAmount(for: provider)
-        let tilt = self.tiltAmount(for: provider) * .pi / 28 // limit to ~6.4°
+        let rawWiggle = self.wiggleAmount(for: provider)
+        let rawTilt = self.tiltAmount(for: provider) * .pi / 28 // limit to ~6.4°
+        let motion = self.filteredMotion(blink: rawBlink, wiggle: rawWiggle, tilt: rawTilt, for: style)
+        let blink = motion.blink
+        let wiggle = motion.wiggle
+        let tilt = motion.tilt
         if let morphProgress {
-            let image = IconRenderer.makeMorphIcon(progress: morphProgress, style: style)
+            let image = isLoading
+                ? self.cachedLoadingMorphIcon(progress: morphProgress, style: style)
+                : IconRenderer.makeMorphIcon(progress: morphProgress, style: style)
             self.setButtonImage(image, for: button)
         } else {
             self.setButtonTitle(nil, for: button)
-            let image = IconRenderer.makeIcon(
-                primaryRemaining: primary,
-                weeklyRemaining: weekly,
-                creditsRemaining: credits,
-                stale: stale,
+            let status = self.store.statusIndicator(for: provider)
+            let image: NSImage = if isLoading, let primary, let weekly {
+                self.cachedLoadingBarsIcon(
+                    primaryRemaining: primary,
+                    weeklyRemaining: weekly,
+                    style: style,
+                    statusIndicator: status,
+                    blink: blink)
+            } else {
+                IconRenderer.makeIcon(
+                    primaryRemaining: primary,
+                    weeklyRemaining: weekly,
+                    creditsRemaining: credits,
+                    stale: stale,
+                    style: style,
+                    blink: blink,
+                    wiggle: wiggle,
+                    tilt: tilt,
+                    statusIndicator: status)
+            }
+            self.setButtonImage(image, for: button)
+        }
+    }
+
+    private static func styleSupportsBlink(_ style: IconStyle) -> Bool {
+        switch style {
+        case .codex, .claude, .gemini, .antigravity, .factory, .warp:
+            true
+        default:
+            false
+        }
+    }
+
+    private static func styleSupportsWiggle(_ style: IconStyle) -> Bool {
+        style == .claude
+    }
+
+    private static func styleSupportsTilt(_ style: IconStyle) -> Bool {
+        style == .codex
+    }
+
+    private func filteredMotion(
+        blink: CGFloat,
+        wiggle: CGFloat,
+        tilt: CGFloat,
+        for style: IconStyle) -> (blink: CGFloat, wiggle: CGFloat, tilt: CGFloat)
+    {
+        let filteredBlink = Self.styleSupportsBlink(style) ? blink : 0
+        let filteredWiggle = Self.styleSupportsWiggle(style) ? wiggle : 0
+        let filteredTilt = Self.styleSupportsTilt(style) ? tilt : 0
+        return (filteredBlink, filteredWiggle, filteredTilt)
+    }
+
+    private func cachedLoadingBarsIcon(
+        primaryRemaining: Double,
+        weeklyRemaining: Double,
+        style: IconStyle,
+        statusIndicator: ProviderStatusIndicator,
+        blink: CGFloat) -> NSImage
+    {
+        let key = LoadingFrameCacheKey(
+            style: style,
+            kind: .bars(
+                primaryEncodedFill: self.encodedLoadingFill(for: primaryRemaining),
+                weeklyEncodedFill: self.encodedLoadingFill(for: weeklyRemaining),
+                status: self.statusIndicatorKey(statusIndicator),
+                blinkBucket: self.loadingBlinkBucket(for: blink, style: style)))
+        return self.cachedLoadingFrame(for: key) {
+            IconRenderer.makeIcon(
+                primaryRemaining: primaryRemaining,
+                weeklyRemaining: weeklyRemaining,
+                creditsRemaining: nil,
+                stale: false,
                 style: style,
                 blink: blink,
-                wiggle: wiggle,
-                tilt: tilt,
-                statusIndicator: self.store.statusIndicator(for: provider))
-            self.setButtonImage(image, for: button)
+                wiggle: 0,
+                tilt: 0,
+                statusIndicator: statusIndicator)
+        }
+    }
+
+    private func cachedLoadingMorphIcon(progress: Double, style: IconStyle) -> NSImage {
+        let bucket = Int((max(0, min(progress, 1)) * Double(Self.loadingMorphBucketCount)).rounded())
+        let key = LoadingFrameCacheKey(style: style, kind: .morph(progressBucket: bucket))
+        return self.cachedLoadingFrame(for: key) {
+            IconRenderer.makeMorphIcon(progress: progress, style: style)
+        }
+    }
+
+    private func cachedLoadingFrame(for key: LoadingFrameCacheKey, build: () -> NSImage) -> NSImage {
+        if let cached = self.loadingFrameCache[key] {
+            self.loadingFrameOrder.removeAll { $0 == key }
+            self.loadingFrameOrder.append(key)
+            return cached
+        }
+
+        let image = build()
+        self.loadingFrameCache[key] = image
+        self.loadingFrameOrder.removeAll { $0 == key }
+        self.loadingFrameOrder.append(key)
+        while self.loadingFrameOrder.count > Self.loadingFrameCacheLimit {
+            let oldest = self.loadingFrameOrder.removeFirst()
+            self.loadingFrameCache.removeValue(forKey: oldest)
+        }
+        return image
+    }
+
+    private func encodedLoadingFill(for percent: Double) -> Int {
+        let clamped = max(0, min(percent, 100))
+        let fill = Int((Self.loadingBarWidthPx * CGFloat(clamped / 100)).rounded())
+        let hasPositiveValue = clamped > 0 ? 1 : 0
+        return fill * 2 + hasPositiveValue
+    }
+
+    private func loadingBlinkBucket(for blink: CGFloat, style: IconStyle) -> Int {
+        guard Self.styleSupportsBlink(style) else { return 0 }
+        let clamped = max(0, min(blink, 1))
+        return Int((clamped * Self.loadingBlinkBucketCount).rounded())
+    }
+
+    private func statusIndicatorKey(_ indicator: ProviderStatusIndicator) -> Int {
+        switch indicator {
+        case .none: 0
+        case .minor: 1
+        case .major: 2
+        case .critical: 3
+        case .maintenance: 4
+        case .unknown: 5
         }
     }
 
@@ -491,6 +664,8 @@ extension StatusItemController {
             self.animationDriver?.stop()
             self.animationDriver = nil
             self.animationPhase = 0
+            self.loadingFrameCache.removeAll(keepingCapacity: true)
+            self.loadingFrameOrder.removeAll(keepingCapacity: true)
             if self.shouldMergeIcons {
                 self.applyIcon(phase: nil)
             } else {

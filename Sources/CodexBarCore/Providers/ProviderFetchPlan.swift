@@ -108,11 +108,14 @@ public struct ProviderFetchOutcome: @unchecked Sendable {
 
 public enum ProviderFetchError: LocalizedError, Sendable {
     case noAvailableStrategy(UsageProvider)
+    case strategyTimedOut(strategyID: String, seconds: Int)
 
     public var errorDescription: String? {
         switch self {
         case let .noAvailableStrategy(provider):
             "No available fetch strategy for \(provider.rawValue)."
+        case let .strategyTimedOut(strategyID, seconds):
+            "Fetch strategy \(strategyID) timed out after \(seconds)s."
         }
     }
 }
@@ -152,9 +155,14 @@ extension ProviderFetchStrategy {
 }
 
 public struct ProviderFetchPipeline: Sendable {
+    public let strategyTimeout: TimeInterval
     public let resolveStrategies: @Sendable (ProviderFetchContext) async -> [any ProviderFetchStrategy]
 
-    public init(resolveStrategies: @escaping @Sendable (ProviderFetchContext) async -> [any ProviderFetchStrategy]) {
+    public init(
+        strategyTimeout: TimeInterval = 60,
+        resolveStrategies: @escaping @Sendable (ProviderFetchContext) async -> [any ProviderFetchStrategy])
+    {
+        self.strategyTimeout = max(0, strategyTimeout)
         self.resolveStrategies = resolveStrategies
     }
 
@@ -176,7 +184,7 @@ public struct ProviderFetchPipeline: Sendable {
             }
 
             do {
-                let result = try await strategy.fetch(context)
+                let result = try await self.fetchWithStrategyTimeout(strategy: strategy, context: context)
                 attempts.append(ProviderFetchAttempt(
                     strategyID: strategy.id,
                     kind: strategy.kind,
@@ -198,6 +206,32 @@ public struct ProviderFetchPipeline: Sendable {
 
         let error = ProviderFetchError.noAvailableStrategy(provider)
         return ProviderFetchOutcome(result: .failure(error), attempts: attempts)
+    }
+
+    private func fetchWithStrategyTimeout(
+        strategy: any ProviderFetchStrategy,
+        context: ProviderFetchContext) async throws -> ProviderFetchResult
+    {
+        guard self.strategyTimeout > 0 else {
+            return try await strategy.fetch(context)
+        }
+
+        let timeoutNanos = UInt64(self.strategyTimeout * 1_000_000_000)
+        let timeoutSeconds = max(1, Int(self.strategyTimeout.rounded(.up)))
+
+        return try await withThrowingTaskGroup(of: ProviderFetchResult.self) { group in
+            group.addTask {
+                try await strategy.fetch(context)
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: timeoutNanos)
+                throw ProviderFetchError.strategyTimedOut(strategyID: strategy.id, seconds: timeoutSeconds)
+            }
+
+            defer { group.cancelAll() }
+            guard let result = try await group.next() else { throw CancellationError() }
+            return result
+        }
     }
 }
 

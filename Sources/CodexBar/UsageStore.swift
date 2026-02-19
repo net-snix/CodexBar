@@ -511,6 +511,37 @@ final class UsageStore {
         }
     }
 
+    func prioritizedTokenRefreshProviders() -> [UsageProvider] {
+        let tokenProviders: Set<UsageProvider> = [.codex, .claude, .vertexai]
+        let providers = self.enabledProviders().filter { tokenProviders.contains($0) }
+        return self.sortTokenRefreshProvidersByStaleness(providers)
+    }
+
+    func sortTokenRefreshProvidersByStaleness(_ providers: [UsageProvider]) -> [UsageProvider] {
+        providers.sorted { lhs, rhs in
+            let lhsDate = self.lastTokenFetchAt[lhs] ?? .distantPast
+            let rhsDate = self.lastTokenFetchAt[rhs] ?? .distantPast
+            if lhsDate != rhsDate { return lhsDate < rhsDate }
+            return lhs.rawValue < rhs.rawValue
+        }
+    }
+
+    func runTokenRefreshPass(
+        providers: [UsageProvider],
+        force: Bool,
+        refreshOperation: @escaping @Sendable (UsageProvider, Bool) async -> Void) async
+    {
+        await withTaskGroup(of: Void.self) { group in
+            for provider in providers {
+                group.addTask {
+                    guard !Task.isCancelled else { return }
+                    await refreshOperation(provider, force)
+                }
+            }
+            await group.waitForAll()
+        }
+    }
+
     private func scheduleTokenRefresh(force: Bool) {
         if force {
             self.tokenRefreshSequenceTask?.cancel()
@@ -518,16 +549,18 @@ final class UsageStore {
         } else if self.tokenRefreshSequenceTask != nil {
             return
         }
+        let providers = self.prioritizedTokenRefreshProviders()
+        guard !providers.isEmpty else { return }
 
-        self.tokenRefreshSequenceTask = Task(priority: .utility) { [weak self] in
+        self.tokenRefreshSequenceTask = Task(priority: .utility) { [weak self, providers] in
             guard let self else { return }
             defer {
                 Task { @MainActor [weak self] in
                     self?.tokenRefreshSequenceTask = nil
                 }
             }
-            for provider in self.enabledProviders() {
-                if Task.isCancelled { break }
+            await self.runTokenRefreshPass(providers: providers, force: force) { [weak self] provider, force in
+                guard let self else { return }
                 await self.refreshTokenUsage(provider, force: force)
             }
         }

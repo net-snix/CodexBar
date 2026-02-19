@@ -46,6 +46,10 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
     var openMenus: [ObjectIdentifier: NSMenu] = [:]
     var menuRefreshTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
     var blinkTask: Task<Void, Never>?
+    var loadingFrameCache: [LoadingFrameCacheKey: NSImage] = [:]
+    var loadingFrameOrder: [LoadingFrameCacheKey] = []
+    var menuCardHeightCache: [MenuCardHeightCacheKey: CGFloat] = [:]
+    var menuCardHeightOrder: [MenuCardHeightCacheKey] = []
     var loginTask: Task<Void, Never>? {
         didSet { self.refreshMenusForLoginStateChange() }
     }
@@ -87,6 +91,25 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
     var selectedMenuProvider: UsageProvider? {
         get { self.settings.selectedMenuProvider }
         set { self.settings.selectedMenuProvider = newValue }
+    }
+
+    static let loadingFrameCacheLimit = 256
+    static let menuCardHeightCacheLimit = 192
+
+    struct LoadingFrameCacheKey: Hashable {
+        enum Kind: Hashable {
+            case bars(primaryEncodedFill: Int, weeklyEncodedFill: Int, status: Int, blinkBucket: Int)
+            case morph(progressBucket: Int)
+        }
+
+        let style: IconStyle
+        let kind: Kind
+    }
+
+    struct MenuCardHeightCacheKey: Hashable {
+        let id: String
+        let widthBucket: Int
+        let contentVersion: Int
     }
 
     struct BlinkState {

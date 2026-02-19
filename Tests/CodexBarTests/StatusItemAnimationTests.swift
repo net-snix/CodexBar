@@ -231,6 +231,48 @@ struct StatusItemAnimationTests {
     }
 
     @Test
+    func loadingAnimationReusesFrameImageWithinSamePixelBucket() {
+        let settings = SettingsStore(
+            configStore: testConfigStore(suiteName: "StatusItemAnimationTests-loading-frame-cache"),
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+        settings.statusChecksEnabled = false
+        settings.refreshFrequency = .manual
+        settings.mergeIcons = false
+        settings.menuBarShowsBrandIconWithPercent = false
+
+        let registry = ProviderRegistry.shared
+        if let codexMeta = registry.metadata[.codex] {
+            settings.setProviderEnabled(provider: .codex, metadata: codexMeta, enabled: true)
+        }
+
+        let fetcher = UsageFetcher()
+        let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
+        store._setSnapshotForTesting(nil, provider: .codex)
+        store._setErrorForTesting(nil, provider: .codex)
+
+        let controller = StatusItemController(
+            store: store,
+            settings: settings,
+            account: fetcher.loadAccountInfo(),
+            updater: DisabledUpdaterController(),
+            preferencesSelection: PreferencesSelection(),
+            statusBar: self.makeStatusBarForTesting())
+        controller.animationPattern = .knightRider
+
+        controller.applyIcon(for: .codex, phase: 0)
+        let first = controller.statusItems[.codex]?.button?.image
+        #expect(first != nil)
+
+        // Different floating-point percentages, same rendered fill width at 30px bars.
+        controller.applyIcon(for: .codex, phase: 0.02)
+        let second = controller.statusItems[.codex]?.button?.image
+        #expect(second != nil)
+
+        #expect(first === second)
+    }
+
+    @Test
     func menuBarPercentUsesConfiguredMetric() {
         let settings = SettingsStore(
             configStore: testConfigStore(suiteName: "StatusItemAnimationTests-metric"),

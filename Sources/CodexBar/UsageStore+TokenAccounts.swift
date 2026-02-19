@@ -32,13 +32,54 @@ extension UsageStore {
         let selectedAccount = self.settings.selectedTokenAccount(for: provider)
         let limitedAccounts = self.limitedTokenAccounts(accounts, selected: selectedAccount)
         let effectiveSelected = selectedAccount ?? limitedAccounts.first
+        let descriptor = ProviderDescriptorRegistry.descriptor(for: provider)
+        let requests = limitedAccounts.map { account in
+            TokenAccountFetchRequest(
+                accountID: account.id,
+                context: self.makeFetchContext(
+                    provider: provider,
+                    override: TokenAccountOverride(provider: provider, account: account)),
+                descriptor: descriptor)
+        }
+        let outcomes = await Self.fetchAccountOutcomesConcurrently(requests: requests)
+        await self.applyTokenAccountOutcomes(
+            provider: provider,
+            accounts: limitedAccounts,
+            effectiveSelected: effectiveSelected,
+            outcomes: outcomes)
+    }
+
+    func refreshTokenAccounts(
+        provider: UsageProvider,
+        accounts: [ProviderTokenAccount],
+        fetchOutcomeForAccount: @escaping @Sendable (ProviderTokenAccount) async -> ProviderFetchOutcome) async
+    {
+        let selectedAccount = self.settings.selectedTokenAccount(for: provider)
+        let limitedAccounts = self.limitedTokenAccounts(accounts, selected: selectedAccount)
+        let effectiveSelected = selectedAccount ?? limitedAccounts.first
+        let outcomes = await Self.fetchAccountOutcomesConcurrently(
+            accounts: limitedAccounts,
+            fetchOutcomeForAccount: fetchOutcomeForAccount)
+        await self.applyTokenAccountOutcomes(
+            provider: provider,
+            accounts: limitedAccounts,
+            effectiveSelected: effectiveSelected,
+            outcomes: outcomes)
+    }
+
+    func applyTokenAccountOutcomes(
+        provider: UsageProvider,
+        accounts: [ProviderTokenAccount],
+        effectiveSelected: ProviderTokenAccount?,
+        outcomes: [UUID: ProviderFetchOutcome]) async
+    {
         var snapshots: [TokenAccountUsageSnapshot] = []
         var selectedOutcome: ProviderFetchOutcome?
         var selectedSnapshot: UsageSnapshot?
 
-        for account in limitedAccounts {
-            let override = TokenAccountOverride(provider: provider, account: account)
-            let outcome = await self.fetchOutcome(provider: provider, override: override)
+        for account in accounts {
+            let outcome = outcomes[account.id]
+                ?? ProviderFetchOutcome(result: .failure(CancellationError()), attempts: [])
             let resolved = self.resolveAccountOutcome(outcome, provider: provider, account: account)
             snapshots.append(resolved.snapshot)
             if account.id == effectiveSelected?.id {
@@ -47,9 +88,7 @@ extension UsageStore {
             }
         }
 
-        await MainActor.run {
-            self.accountSnapshots[provider] = snapshots
-        }
+        self.accountSnapshots[provider] = snapshots
 
         if let selectedOutcome {
             await self.applySelectedOutcome(
@@ -74,11 +113,64 @@ extension UsageStore {
         return limited
     }
 
+    private static func fetchAccountOutcomesConcurrently(requests: [TokenAccountFetchRequest]) async
+        -> [UUID: ProviderFetchOutcome]
+    {
+        await withTaskGroup(
+            of: (UUID, ProviderFetchOutcome).self,
+            returning: [UUID: ProviderFetchOutcome].self)
+        { group in
+            for request in requests {
+                group.addTask {
+                    let outcome = await request.descriptor.fetchOutcome(context: request.context)
+                    return (request.accountID, outcome)
+                }
+            }
+
+            var outcomes: [UUID: ProviderFetchOutcome] = [:]
+            outcomes.reserveCapacity(requests.count)
+            for await (accountID, outcome) in group {
+                outcomes[accountID] = outcome
+            }
+            return outcomes
+        }
+    }
+
+    static func fetchAccountOutcomesConcurrently(
+        accounts: [ProviderTokenAccount],
+        fetchOutcomeForAccount: @escaping @Sendable (ProviderTokenAccount) async -> ProviderFetchOutcome)
+        async -> [UUID: ProviderFetchOutcome]
+    {
+        await withTaskGroup(
+            of: (UUID, ProviderFetchOutcome).self,
+            returning: [UUID: ProviderFetchOutcome].self)
+        { group in
+            for account in accounts {
+                group.addTask {
+                    let outcome = await fetchOutcomeForAccount(account)
+                    return (account.id, outcome)
+                }
+            }
+
+            var outcomes: [UUID: ProviderFetchOutcome] = [:]
+            outcomes.reserveCapacity(accounts.count)
+            for await (accountID, outcome) in group {
+                outcomes[accountID] = outcome
+            }
+            return outcomes
+        }
+    }
+
     func fetchOutcome(
         provider: UsageProvider,
         override: TokenAccountOverride?) async -> ProviderFetchOutcome
     {
         let descriptor = ProviderDescriptorRegistry.descriptor(for: provider)
+        let context = self.makeFetchContext(provider: provider, override: override)
+        return await descriptor.fetchOutcome(context: context)
+    }
+
+    func makeFetchContext(provider: UsageProvider, override: TokenAccountOverride?) -> ProviderFetchContext {
         let sourceMode = self.sourceMode(for: provider)
         let snapshot = ProviderRegistry.makeSettingsSnapshot(settings: self.settings, tokenOverride: override)
         let env = ProviderRegistry.makeEnvironment(
@@ -87,7 +179,7 @@ extension UsageStore {
             settings: self.settings,
             tokenOverride: override)
         let verbose = self.settings.isVerboseLoggingEnabled
-        let context = ProviderFetchContext(
+        return ProviderFetchContext(
             runtime: .app,
             sourceMode: sourceMode,
             includeCredits: false,
@@ -99,7 +191,6 @@ extension UsageStore {
             fetcher: self.codexFetcher,
             claudeFetcher: self.claudeFetcher,
             browserDetection: self.browserDetection)
-        return await descriptor.fetchOutcome(context: context)
     }
 
     func sourceMode(for provider: UsageProvider) -> ProviderSourceMode {
@@ -111,6 +202,12 @@ extension UsageStore {
     private struct ResolvedAccountOutcome {
         let snapshot: TokenAccountUsageSnapshot
         let usage: UsageSnapshot?
+    }
+
+    private struct TokenAccountFetchRequest: Sendable {
+        let accountID: UUID
+        let context: ProviderFetchContext
+        let descriptor: ProviderDescriptor
     }
 
     private func resolveAccountOutcome(

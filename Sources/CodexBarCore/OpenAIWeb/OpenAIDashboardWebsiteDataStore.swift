@@ -16,21 +16,42 @@ import WebKit
 /// account email. This ensures `OpenAIDashboardWebViewCache` can use object identity for cache lookups.
 @MainActor
 public enum OpenAIDashboardWebsiteDataStore {
+    private struct CacheEntry {
+        let store: WKWebsiteDataStore
+        var lastAccessAt: Date
+    }
+
+    private struct CachePolicy {
+        var maxEntries: Int
+        var entryTTL: TimeInterval
+
+        static let `default` = CachePolicy(
+            maxEntries: 24,
+            entryTTL: 12 * 60 * 60)
+    }
+
+    private static var cachePolicy = CachePolicy.default
     /// Cached data store instances keyed by normalized email.
     /// Using the same instance ensures stable object identity for WebView cache lookups.
-    private static var cachedStores: [String: WKWebsiteDataStore] = [:]
+    private static var cachedStores: [String: CacheEntry] = [:]
 
     public static func store(forAccountEmail email: String?) -> WKWebsiteDataStore {
         guard let normalized = normalizeEmail(email) else { return .default() }
+        let now = Date()
+
+        self.pruneExpiredEntries(now: now)
 
         // Return cached instance if available to maintain stable object identity
-        if let cached = cachedStores[normalized] {
-            return cached
+        if var cached = self.cachedStores[normalized] {
+            cached.lastAccessAt = now
+            self.cachedStores[normalized] = cached
+            return cached.store
         }
 
         let id = Self.identifier(forNormalizedEmail: normalized)
         let store = WKWebsiteDataStore(forIdentifier: id)
-        self.cachedStores[normalized] = store
+        self.cachedStores[normalized] = CacheEntry(store: store, lastAccessAt: now)
+        self.evictLeastRecentlyUsedIfNeeded()
         return store
     }
 
@@ -64,10 +85,65 @@ public enum OpenAIDashboardWebsiteDataStore {
     /// Clear all cached store instances (for test isolation).
     public static func clearCacheForTesting() {
         self.cachedStores.removeAll()
+        self.cachePolicy = .default
+    }
+
+    public static func configureCacheForTesting(maxEntries: Int, entryTTL: TimeInterval) {
+        self.cachePolicy = CachePolicy(
+            maxEntries: max(1, maxEntries),
+            entryTTL: max(0, entryTTL))
+        let now = Date()
+        self.pruneExpiredEntries(now: now)
+        self.evictLeastRecentlyUsedIfNeeded()
+    }
+
+    public static func cacheCountForTesting() -> Int {
+        self.cachedStores.count
+    }
+
+    public static func isCachedForTesting(email: String) -> Bool {
+        guard let normalized = normalizeEmail(email) else { return false }
+        return self.cachedStores[normalized] != nil
+    }
+
+    public static func pruneCacheForTesting(now: Date) {
+        self.pruneExpiredEntries(now: now)
     }
     #endif
 
     // MARK: - Private
+
+    private static func pruneExpiredEntries(now: Date) {
+        let ttl = self.cachePolicy.entryTTL
+        if ttl <= 0 {
+            self.cachedStores.removeAll()
+            return
+        }
+
+        self.cachedStores = self.cachedStores.filter { _, entry in
+            now.timeIntervalSince(entry.lastAccessAt) <= ttl
+        }
+    }
+
+    private static func evictLeastRecentlyUsedIfNeeded() {
+        let maxEntries = max(1, self.cachePolicy.maxEntries)
+        guard self.cachedStores.count > maxEntries else { return }
+
+        let removeCount = self.cachedStores.count - maxEntries
+        let keysToRemove = self.cachedStores
+            .sorted { lhs, rhs in
+                if lhs.value.lastAccessAt == rhs.value.lastAccessAt {
+                    return lhs.key < rhs.key
+                }
+                return lhs.value.lastAccessAt < rhs.value.lastAccessAt
+            }
+            .prefix(removeCount)
+            .map(\.key)
+
+        for key in keysToRemove {
+            self.cachedStores.removeValue(forKey: key)
+        }
+    }
 
     private static func normalizeEmail(_ email: String?) -> String? {
         guard let raw = email?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return nil }
