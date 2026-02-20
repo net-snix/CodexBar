@@ -10,6 +10,7 @@ struct CostUsagePricingTests {
         #expect(CostUsagePricing.normalizeCodexModel("gpt-5.1-codex-max") == "gpt-5.1")
         #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3") == "gpt-5.3-codex")
         #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex") == "gpt-5.3-codex")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-max") == "gpt-5.3-codex")
         #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-spark") == "gpt-5.3-codex")
     }
 
@@ -44,11 +45,18 @@ struct CostUsagePricingTests {
             inputTokens: input,
             cachedInputTokens: cached,
             outputTokens: output)
+        let gpt53Max = CostUsagePricing.codexCostUSD(
+            model: "gpt-5.3-codex-max",
+            inputTokens: input,
+            cachedInputTokens: cached,
+            outputTokens: output)
 
         #expect(gpt53Codex != nil)
         #expect(gpt53Spark != nil)
+        #expect(gpt53Max != nil)
         #expect(gpt53Codex == gpt52)
         #expect(gpt53Spark == gpt52)
+        #expect(gpt53Max == gpt52)
     }
 
     @Test
