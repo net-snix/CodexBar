@@ -11,6 +11,8 @@ struct CostUsagePricingTests {
         #expect(CostUsagePricing.normalizeCodexModel("gpt-5.4-pro-2026-03-05") == "gpt-5.4-pro")
         #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-2026-03-05") == "gpt-5.3-codex")
         #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-spark") == "gpt-5.3-codex-spark")
+        #expect(CostUsagePricing.normalizeCodexModel("openai/gpt-5.3") == "gpt-5.3")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-max") == "gpt-5.3")
     }
 
     @Test
@@ -44,8 +46,6 @@ struct CostUsagePricingTests {
         #expect(CostUsagePricing.codexDisplayLabel(model: "gpt-5.3-codex-spark") == "Research Preview")
         #expect(CostUsagePricing.codexDisplayLabel(model: "gpt-5.2-codex") == nil)
     }
-
-    @Test
     func normalizesClaudeOpus41DatedVariants() {
         #expect(CostUsagePricing.normalizeClaudeModel("claude-opus-4-1-20250805") == "claude-opus-4-1")
     }

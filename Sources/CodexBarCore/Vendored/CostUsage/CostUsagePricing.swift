@@ -77,6 +77,11 @@ enum CostUsagePricing {
             outputCostPerToken: 1.4e-5,
             cacheReadInputCostPerToken: 1.75e-7,
             displayLabel: nil),
+        "gpt-5.3": CodexPricing(
+            inputCostPerToken: 1.75e-6,
+            outputCostPerToken: 1.4e-5,
+            cacheReadInputCostPerToken: 1.75e-7,
+            displayLabel: nil),
         "gpt-5.2-pro": CodexPricing(
             inputCostPerToken: 2.1e-5,
             outputCostPerToken: 1.68e-4,
