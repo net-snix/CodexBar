@@ -8,13 +8,17 @@ import Foundation
 private enum TTYCommandRunnerActiveProcessRegistry {
     private static let lock = NSLock()
     private nonisolated(unsafe) static var processes: [pid_t: ProcessInfo] = [:]
+<<<<<<< HEAD
     private nonisolated(unsafe) static var isShuttingDown = false
+=======
+>>>>>>> 85370e7 (Cleanup lingering processes spawned byt TTYCommandRunner on termination)
 
     private struct ProcessInfo {
         let binary: String
         var processGroup: pid_t?
     }
 
+<<<<<<< HEAD
     @discardableResult
     static func register(pid: pid_t, binary: String) -> Bool {
         guard pid > 0 else { return false }
@@ -23,6 +27,13 @@ private enum TTYCommandRunnerActiveProcessRegistry {
         guard !self.isShuttingDown else { return false }
         self.processes[pid] = ProcessInfo(binary: binary, processGroup: nil)
         return true
+=======
+    static func register(pid: pid_t, binary: String) {
+        guard pid > 0 else { return }
+        self.lock.lock()
+        self.processes[pid] = ProcessInfo(binary: binary, processGroup: nil)
+        self.lock.unlock()
+>>>>>>> 85370e7 (Cleanup lingering processes spawned byt TTYCommandRunner on termination)
     }
 
     static func updateProcessGroup(pid: pid_t, processGroup: pid_t?) {
@@ -44,9 +55,14 @@ private enum TTYCommandRunnerActiveProcessRegistry {
         self.lock.unlock()
     }
 
+<<<<<<< HEAD
     static func drainForShutdown() -> [(pid: pid_t, binary: String, processGroup: pid_t?)] {
         self.lock.lock()
         self.isShuttingDown = true
+=======
+    static func drain() -> [(pid: pid_t, binary: String, processGroup: pid_t?)] {
+        self.lock.lock()
+>>>>>>> 85370e7 (Cleanup lingering processes spawned byt TTYCommandRunner on termination)
         let drained = self.processes.map {
             (pid: $0.key, binary: $0.value.binary, processGroup: $0.value.processGroup)
         }
@@ -58,7 +74,10 @@ private enum TTYCommandRunnerActiveProcessRegistry {
     static func reset() {
         self.lock.lock()
         self.processes.removeAll()
+<<<<<<< HEAD
         self.isShuttingDown = false
+=======
+>>>>>>> 85370e7 (Cleanup lingering processes spawned byt TTYCommandRunner on termination)
         self.lock.unlock()
     }
 
@@ -149,7 +168,11 @@ public struct TTYCommandRunner {
     public init() {}
 
     public static func terminateActiveProcessesForAppShutdown() {
+<<<<<<< HEAD
         let targets = TTYCommandRunnerActiveProcessRegistry.drainForShutdown()
+=======
+        let targets = TTYCommandRunnerActiveProcessRegistry.drain()
+>>>>>>> 85370e7 (Cleanup lingering processes spawned byt TTYCommandRunner on termination)
         guard !targets.isEmpty else { return }
 
         let resolvedTargets = self.resolveShutdownTargets(
@@ -389,6 +412,13 @@ public struct TTYCommandRunner {
         /// while bootstrapping the CLI (e.g. when it prompts for login/telemetry).
         func cleanup() {
             guard !cleanedUp else { return }
+<<<<<<< HEAD
+=======
+            cleanedUp = true
+            if didLaunch {
+                TTYCommandRunnerActiveProcessRegistry.unregister(pid: proc.processIdentifier)
+            }
+>>>>>>> 85370e7 (Cleanup lingering processes spawned byt TTYCommandRunner on termination)
 
             if didLaunch, proc.isRunning {
                 Self.log.debug("PTY stopping", metadata: ["binary": binaryName])
@@ -433,6 +463,11 @@ public struct TTYCommandRunner {
         do {
             try proc.run()
             didLaunch = true
+<<<<<<< HEAD
+=======
+            TTYCommandRunnerActiveProcessRegistry.register(pid: proc.processIdentifier, binary: binaryName)
+            Self.log.debug("PTY launched", metadata: ["binary": binaryName])
+>>>>>>> 85370e7 (Cleanup lingering processes spawned byt TTYCommandRunner on termination)
         } catch {
             Self.log.warning(
                 "PTY launch failed",
@@ -445,6 +480,7 @@ public struct TTYCommandRunner {
         let pid = proc.processIdentifier
         if setpgid(pid, pid) == 0 {
             processGroup = pid
+            TTYCommandRunnerActiveProcessRegistry.updateProcessGroup(pid: pid, processGroup: pid)
         }
 
         guard TTYCommandRunnerActiveProcessRegistry.register(pid: pid, binary: binaryName) else {
@@ -852,19 +888,25 @@ public struct TTYCommandRunner {
             processGroup: processGroup)
     }
 
+<<<<<<< HEAD
     @discardableResult
     static func _test_registerTrackedProcess(pid: pid_t, binary: String) -> Bool {
         TTYCommandRunnerActiveProcessRegistry.register(pid: pid, binary: binary)
     }
 
+=======
+>>>>>>> 85370e7 (Cleanup lingering processes spawned byt TTYCommandRunner on termination)
     static func _test_trackedProcessCount() -> Int {
         TTYCommandRunnerActiveProcessRegistry.count()
     }
 
+<<<<<<< HEAD
     static func _test_drainTrackedProcessesForShutdown() -> [(pid: pid_t, binary: String, processGroup: pid_t?)] {
         TTYCommandRunnerActiveProcessRegistry.drainForShutdown()
     }
 
+=======
+>>>>>>> 85370e7 (Cleanup lingering processes spawned byt TTYCommandRunner on termination)
     static func _test_resolveShutdownTargets(
         _ targets: [(pid: pid_t, binary: String, processGroup: pid_t?)],
         hostProcessGroup: pid_t,

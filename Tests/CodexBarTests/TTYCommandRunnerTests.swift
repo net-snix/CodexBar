@@ -5,6 +5,7 @@ import Testing
 @Suite(.serialized)
 struct TTYCommandRunnerEnvTests {
     @Test
+<<<<<<< HEAD
     func shutdownFenceDrainsTrackedTTYProcesses() {
         TTYCommandRunner._test_resetTrackedProcesses()
         defer { TTYCommandRunner._test_resetTrackedProcesses() }
@@ -15,6 +16,16 @@ struct TTYCommandRunnerEnvTests {
         let drained = TTYCommandRunner._test_drainTrackedProcessesForShutdown()
         #expect(drained.count == 1)
         #expect(drained[0].pid == 1001)
+=======
+    func shutdownCleanupDrainsTrackedTTYProcesses() {
+        TTYCommandRunner._test_resetTrackedProcesses()
+        defer { TTYCommandRunner._test_resetTrackedProcesses() }
+
+        TTYCommandRunner._test_trackProcess(pid: pid_t(Int32.max), binary: "codex", processGroup: nil)
+        #expect(TTYCommandRunner._test_trackedProcessCount() == 1)
+
+        TTYCommandRunner.terminateActiveProcessesForAppShutdown()
+>>>>>>> 85370e7 (Cleanup lingering processes spawned byt TTYCommandRunner on termination)
         #expect(TTYCommandRunner._test_trackedProcessCount() == 0)
     }
 
@@ -28,6 +39,7 @@ struct TTYCommandRunnerEnvTests {
     }
 
     @Test
+<<<<<<< HEAD
     func shutdownFenceRejectsNewRegistrations() {
         TTYCommandRunner._test_resetTrackedProcesses()
         defer { TTYCommandRunner._test_resetTrackedProcesses() }
@@ -41,6 +53,8 @@ struct TTYCommandRunnerEnvTests {
     }
 
     @Test
+=======
+>>>>>>> 85370e7 (Cleanup lingering processes spawned byt TTYCommandRunner on termination)
     func shutdownResolverSkipsHostProcessGroupFallback() {
         let hostGroup: pid_t = 4242
         let targets: [(pid: pid_t, binary: String, processGroup: pid_t?)] = [
