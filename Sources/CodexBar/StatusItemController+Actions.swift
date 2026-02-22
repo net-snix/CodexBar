@@ -12,6 +12,14 @@ extension StatusItemController {
         }
     }
 
+    func refreshMenuProvider(_ provider: UsageProvider, forceTokenUsage: Bool) {
+        Task {
+            await ProviderInteractionContext.$current.withValue(.userInitiated) {
+                await self.store.refreshProviderFromMenu(provider, forceTokenUsage: forceTokenUsage)
+            }
+        }
+    }
+
     @objc func refreshNow() {
         self.refreshStore(forceTokenUsage: true)
     }

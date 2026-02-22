@@ -174,6 +174,63 @@ struct MenuCardModelTests {
     }
 
     @Test
+    func showsSparkMetricUnderCodeReviewWhenDashboardPresent() throws {
+        let now = Date()
+        let identity = ProviderIdentitySnapshot(
+            providerID: .codex,
+            accountEmail: "codex@example.com",
+            accountOrganization: nil,
+            loginMethod: nil)
+        let snapshot = UsageSnapshot(
+            primary: RateWindow(
+                usedPercent: 0,
+                windowMinutes: 300,
+                resetsAt: nil,
+                resetDescription: nil),
+            secondary: nil,
+            tertiary: nil,
+            updatedAt: now,
+            identity: identity)
+        let metadata = try #require(ProviderDefaults.metadata[.codex])
+
+        let dashboard = OpenAIDashboardSnapshot(
+            signedInEmail: "codex@example.com",
+            codeReviewRemainingPercent: 73,
+            sparkRemainingPercent: 41,
+            creditEvents: [],
+            dailyBreakdown: [],
+            usageBreakdown: [],
+            creditsPurchaseURL: nil,
+            updatedAt: now)
+        let model = UsageMenuCardView.Model.make(.init(
+            provider: .codex,
+            metadata: metadata,
+            snapshot: snapshot,
+            credits: nil,
+            creditsError: nil,
+            dashboard: dashboard,
+            dashboardError: nil,
+            tokenSnapshot: nil,
+            tokenError: nil,
+            account: AccountInfo(email: "codex@example.com", plan: nil),
+            isRefreshing: false,
+            lastError: nil,
+            usageBarsShowUsed: false,
+            resetTimeDisplayStyle: .countdown,
+            tokenCostUsageEnabled: false,
+            showOptionalCreditsAndExtraUsage: true,
+            hidePersonalInfo: false,
+            now: now))
+
+        let codeReviewIndex = model.metrics.firstIndex { $0.title == "Code review" }
+        let sparkIndex = model.metrics.firstIndex { $0.title == "Spark" }
+        #expect(codeReviewIndex != nil)
+        #expect(sparkIndex != nil)
+        #expect(codeReviewIndex! + 1 == sparkIndex)
+        #expect(model.metrics[sparkIndex!].percent == 41)
+    }
+
+    @Test
     func claudeModelHidesWeeklyWhenUnavailable() throws {
         let now = Date()
         let identity = ProviderIdentitySnapshot(

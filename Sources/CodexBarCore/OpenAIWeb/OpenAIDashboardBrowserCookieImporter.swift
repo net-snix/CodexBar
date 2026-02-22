@@ -364,28 +364,47 @@ public struct OpenAIDashboardBrowserCookieImporter {
         log: @escaping (String) -> Void,
         diagnostics: inout ImportDiagnostics) async -> ImportResult?
     {
-        if source == .safari {
-            return await self.trySafari(
-                targetEmail: targetEmail,
-                allowAnyAccount: allowAnyAccount,
-                log: log,
-                diagnostics: &diagnostics)
+        do {
+            let query = BrowserCookieQuery(domains: Self.cookieDomains)
+            let browserSources = try Self.cookieClient.records(
+                matching: query,
+                in: source,
+                logger: log)
+            guard !browserSources.isEmpty else {
+                log("\(source.displayName) contained 0 matching records.")
+                return nil
+            }
+            for browserSource in browserSources {
+                let cookies = BrowserCookieClient.makeHTTPCookies(browserSource.records, origin: query.origin)
+                guard !cookies.isEmpty else {
+                    log("\(browserSource.label) produced 0 HTTPCookies.")
+                    continue
+                }
+                diagnostics.foundAnyCookies = true
+                log("Loaded \(cookies.count) cookies from \(browserSource.label) (\(self.cookieSummary(cookies)))")
+                let candidate = Candidate(label: browserSource.label, cookies: cookies)
+                if let match = await self.applyCandidate(
+                    candidate,
+                    targetEmail: targetEmail,
+                    allowAnyAccount: allowAnyAccount,
+                    log: log,
+                    diagnostics: &diagnostics)
+                {
+                    return match
+                }
+            }
+            return nil
+        } catch let error as BrowserCookieError {
+            BrowserCookieAccessGate.recordIfNeeded(error)
+            if let hint = error.accessDeniedHint {
+                diagnostics.accessDeniedHints.append(hint)
+            }
+            log("\(source.displayName) cookie load failed: \(error.localizedDescription)")
+            return nil
+        } catch {
+            log("\(source.displayName) cookie load failed: \(error.localizedDescription)")
+            return nil
         }
-        if source == .chrome {
-            return await self.tryChrome(
-                targetEmail: targetEmail,
-                allowAnyAccount: allowAnyAccount,
-                log: log,
-                diagnostics: &diagnostics)
-        }
-        if source == .firefox {
-            return await self.tryFirefox(
-                targetEmail: targetEmail,
-                allowAnyAccount: allowAnyAccount,
-                log: log,
-                diagnostics: &diagnostics)
-        }
-        return nil
     }
 
     private func applyCandidate(
@@ -596,7 +615,9 @@ public struct OpenAIDashboardBrowserCookieImporter {
         await self.clearChatGPTCookies(in: persistent)
         await self.setCookies(candidate.cookies, into: persistent)
 
-        // Validate against the persistent store (login + email sync).
+        // Validate against the persistent store when possible, but don't hard-fail cookie import
+        // on transient WebKit hydration/login detection races. The subsequent dashboard fetch is
+        // the authoritative check.
         do {
             let probe = try await OpenAIDashboardFetcher().probeUsagePage(
                 websiteDataStore: persistent,
@@ -619,6 +640,9 @@ public struct OpenAIDashboardBrowserCookieImporter {
         } catch OpenAIDashboardFetcher.FetchError.loginRequired {
             logger("Selected \(candidate.label) but dashboard still requires login.")
             throw ImportError.dashboardStillRequiresLogin
+        } catch {
+            logger("Selected \(candidate.label) probe failed (\(error.localizedDescription)); rejecting candidate.")
+            throw error
         }
     }
 
@@ -645,6 +669,9 @@ public struct OpenAIDashboardBrowserCookieImporter {
         } catch OpenAIDashboardFetcher.FetchError.loginRequired {
             logger("Selected \(candidate.label) but dashboard still requires login.")
             throw ImportError.dashboardStillRequiresLogin
+        } catch {
+            logger("Selected \(candidate.label) probe failed (\(error.localizedDescription)); rejecting candidate.")
+            throw error
         }
     }
 

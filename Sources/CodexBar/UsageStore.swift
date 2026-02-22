@@ -474,6 +474,29 @@ final class UsageStore {
         }
     }
 
+    func refreshProviderFromMenu(_ provider: UsageProvider, forceTokenUsage: Bool = false) async {
+        let refreshPhase: ProviderRefreshPhase = self.hasCompletedInitialRefresh ? .regular : .startup
+
+        await ProviderRefreshContext.$current.withValue(refreshPhase) {
+            await self.refreshProvider(provider, allowDisabled: true)
+            await self.refreshStatus(provider)
+
+            if forceTokenUsage {
+                self.scheduleTokenRefresh(force: true)
+            }
+
+            if provider == .codex {
+                await self.refreshOpenAIDashboardIfNeeded(force: forceTokenUsage)
+                if self.openAIDashboardRequiresLogin {
+                    await self.refreshProvider(.codex, allowDisabled: true)
+                }
+            }
+
+            self.hasCompletedInitialRefresh = true
+            self.persistWidgetSnapshot(reason: "menu-refresh")
+        }
+    }
+
     /// For demo/testing: drop the snapshot so the loading animation plays, then restore the last snapshot.
     func replayLoadingAnimation(duration: TimeInterval = 3) {
         let current = self.preferredSnapshot

@@ -73,6 +73,19 @@ public enum OpenAIDashboardParser {
         return nil
     }
 
+    public static func parseSparkRemainingPercent(bodyText: String) -> Double? {
+        let cleaned = bodyText.replacingOccurrences(of: "\r", with: "\n")
+        for regex in self.sparkRegexes {
+            let range = NSRange(cleaned.startIndex..<cleaned.endIndex, in: cleaned)
+            guard let match = regex.firstMatch(in: cleaned, options: [], range: range),
+                  match.numberOfRanges >= 2,
+                  let r = Range(match.range(at: 1), in: cleaned)
+            else { continue }
+            if let val = Double(cleaned[r]) { return min(100, max(0, val)) }
+        }
+        return nil
+    }
+
     public static func parseCreditsRemaining(bodyText: String) -> Double? {
         let cleaned = bodyText.replacingOccurrences(of: "\r", with: "\n")
         let patterns = [
@@ -152,6 +165,15 @@ public enum OpenAIDashboardParser {
         let patterns = [
             #"Code\s*review[^0-9%]*([0-9]{1,3})%\s*remaining"#,
             #"Core\s*review[^0-9%]*([0-9]{1,3})%\s*remaining"#,
+        ]
+        return patterns.compactMap { pattern in
+            try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])
+        }
+    }()
+
+    private static let sparkRegexes: [NSRegularExpression] = {
+        let patterns = [
+            #"\b(?:codex\s*)?spark\b[^0-9%]*([0-9]{1,3})%\s*(?:remaining|left)"#,
         ]
         return patterns.compactMap { pattern in
             try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])

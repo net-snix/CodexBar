@@ -3,6 +3,7 @@ import Foundation
 public struct OpenAIDashboardSnapshot: Codable, Equatable, Sendable {
     public let signedInEmail: String?
     public let codeReviewRemainingPercent: Double?
+    public let sparkRemainingPercent: Double?
     public let creditEvents: [CreditEvent]
     public let dailyBreakdown: [OpenAIDashboardDailyBreakdown]
     /// Usage breakdown time series from the Codex dashboard chart ("Usage breakdown", 30 days).
@@ -19,6 +20,7 @@ public struct OpenAIDashboardSnapshot: Codable, Equatable, Sendable {
     public init(
         signedInEmail: String?,
         codeReviewRemainingPercent: Double?,
+        sparkRemainingPercent: Double? = nil,
         creditEvents: [CreditEvent],
         dailyBreakdown: [OpenAIDashboardDailyBreakdown],
         usageBreakdown: [OpenAIDashboardDailyBreakdown],
@@ -31,6 +33,7 @@ public struct OpenAIDashboardSnapshot: Codable, Equatable, Sendable {
     {
         self.signedInEmail = signedInEmail
         self.codeReviewRemainingPercent = codeReviewRemainingPercent
+        self.sparkRemainingPercent = sparkRemainingPercent
         self.creditEvents = creditEvents
         self.dailyBreakdown = dailyBreakdown
         self.usageBreakdown = usageBreakdown
@@ -45,6 +48,7 @@ public struct OpenAIDashboardSnapshot: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case signedInEmail
         case codeReviewRemainingPercent
+        case sparkRemainingPercent
         case creditEvents
         case dailyBreakdown
         case usageBreakdown
@@ -62,6 +66,9 @@ public struct OpenAIDashboardSnapshot: Codable, Equatable, Sendable {
         self.codeReviewRemainingPercent = try container.decodeIfPresent(
             Double.self,
             forKey: .codeReviewRemainingPercent)
+        self.sparkRemainingPercent = try container.decodeIfPresent(
+            Double.self,
+            forKey: .sparkRemainingPercent)
         self.creditEvents = try container.decodeIfPresent([CreditEvent].self, forKey: .creditEvents) ?? []
         self.dailyBreakdown = try container.decodeIfPresent(
             [OpenAIDashboardDailyBreakdown].self,

@@ -164,7 +164,8 @@ extension CodexBarCLI {
             }
         }
 
-        Self.exit(code: exitCode, output: output, kind: exitCode == .success ? .runtime : .provider)
+        let finalOutput: CLIOutputPreferences? = format == .json ? nil : output
+        Self.exit(code: exitCode, output: finalOutput, kind: exitCode == .success ? .runtime : .provider)
     }
 
     static func fetchUsageOutputs(

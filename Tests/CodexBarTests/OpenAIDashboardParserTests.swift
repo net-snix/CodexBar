@@ -34,6 +34,18 @@ struct OpenAIDashboardParserTests {
     }
 
     @Test
+    func parsesSparkRemainingPercent_inline() {
+        let body = "Balance\nSpark 42% remaining\nCredits remaining 291"
+        #expect(OpenAIDashboardParser.parseSparkRemainingPercent(bodyText: body) == 42)
+    }
+
+    @Test
+    func parsesSparkRemainingPercent_multiline() {
+        let body = "Balance\nCodex Spark\n42% remaining\nWeekly usage limit\n"
+        #expect(OpenAIDashboardParser.parseSparkRemainingPercent(bodyText: body) == 42)
+    }
+
+    @Test
     func parsesCreditsRemaining() {
         let body = "Balance\nCredits remaining 1,234.56\nUsage"
         let value = OpenAIDashboardParser.parseCreditsRemaining(bodyText: body)

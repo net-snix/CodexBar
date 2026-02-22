@@ -1241,7 +1241,9 @@ extension StatusItemController {
             tokenSnapshot: tokenSnapshot,
             tokenError: tokenError,
             account: self.account,
-            isRefreshing: self.store.isRefreshing || self.store.isTokenRefreshInFlight(for: target),
+            isRefreshing: self.store.isRefreshing
+                || self.store.refreshingProviders.contains(target)
+                || self.store.isTokenRefreshInFlight(for: target),
             lastError: errorOverride ?? self.store.error(for: target),
             usageBarsShowUsed: self.settings.usageBarsShowUsed,
             resetTimeDisplayStyle: self.settings.resetTimeDisplayStyle,
@@ -1250,7 +1252,7 @@ extension StatusItemController {
             hidePersonalInfo: self.settings.hidePersonalInfo,
             now: Date(),
             refreshAction: { [weak self] in
-                self?.refreshStore(forceTokenUsage: true)
+                self?.refreshMenuProvider(target, forceTokenUsage: true)
             })
         return UsageMenuCardView.Model.make(input)
     }

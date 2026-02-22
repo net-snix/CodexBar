@@ -71,6 +71,7 @@ public struct OpenAIDashboardFetcher {
         accountEmail: String?,
         logger: ((String) -> Void)? = nil,
         debugDumpHTML: Bool = false,
+        requirePrimaryUsageLimit: Bool = false,
         timeout: TimeInterval = 60) async throws -> OpenAIDashboardSnapshot
     {
         let store = OpenAIDashboardWebsiteDataStore.store(forAccountEmail: accountEmail)
@@ -78,6 +79,7 @@ public struct OpenAIDashboardFetcher {
             websiteDataStore: store,
             logger: logger,
             debugDumpHTML: debugDumpHTML,
+            requirePrimaryUsageLimit: requirePrimaryUsageLimit,
             timeout: timeout)
     }
 
@@ -85,6 +87,7 @@ public struct OpenAIDashboardFetcher {
         websiteDataStore: WKWebsiteDataStore,
         logger: ((String) -> Void)? = nil,
         debugDumpHTML: Bool = false,
+        requirePrimaryUsageLimit: Bool = false,
         timeout: TimeInterval = 60) async throws -> OpenAIDashboardSnapshot
     {
         let lease = try await self.makeWebView(websiteDataStore: websiteDataStore, logger: logger)
@@ -102,6 +105,7 @@ public struct OpenAIDashboardFetcher {
         var creditsHeaderVisibleAt: Date?
         var lastUsageBreakdownDebug: String?
         var lastCreditsPurchaseURL: String?
+        var loginSignalFirstSeenAt: Date?
 
         while Date() < deadline {
             let scrape = try await self.scrape(webView: webView)
@@ -126,19 +130,31 @@ public struct OpenAIDashboardFetcher {
                 continue
             }
 
-            // The page is a SPA and can land on ChatGPT UI or other routes; keep forcing the usage URL.
-            if let href = scrape.href, !href.contains("/codex/settings/usage") {
-                _ = webView.load(URLRequest(url: self.usageURL))
-                try? await Task.sleep(for: .milliseconds(500))
-                continue
-            }
-
             if scrape.loginRequired {
+                let now = Date()
+                let hrefLower = scrape.href?.lowercased() ?? ""
+                let onExplicitLoginRoute = hrefLower.contains("/auth/") || hrefLower.contains("/login")
+                let hasSignedInEmail = scrape.signedInEmail?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty == false
+                let authStatus = scrape.authStatus?.lowercased()
+                if loginSignalFirstSeenAt == nil { loginSignalFirstSeenAt = now }
+                let elapsed = now.timeIntervalSince(loginSignalFirstSeenAt ?? now)
+                let shouldRetryTransientLogin = authStatus == "logged_in" || hasSignedInEmail
+                    || (!onExplicitLoginRoute && elapsed < 8)
+                if shouldRetryTransientLogin {
+                    if !onExplicitLoginRoute {
+                        _ = webView.load(URLRequest(url: self.usageURL))
+                    }
+                    try? await Task.sleep(for: .milliseconds(500))
+                    continue
+                }
                 if debugDumpHTML, let html = scrape.bodyHTML {
                     Self.writeDebugArtifacts(html: html, bodyText: scrape.bodyText, logger: log)
                 }
                 throw FetchError.loginRequired
             }
+            loginSignalFirstSeenAt = nil
 
             if scrape.cloudflareInterstitial {
                 if debugDumpHTML, let html = scrape.bodyHTML {
@@ -147,19 +163,28 @@ public struct OpenAIDashboardFetcher {
                 throw FetchError.noDashboardData(body: "Cloudflare challenge detected in WebView.")
             }
 
+            // The page is a SPA and can land on ChatGPT UI or other routes; keep forcing the usage URL.
+            if let href = scrape.href, !href.contains("/codex/settings/usage") {
+                _ = webView.load(URLRequest(url: self.usageURL))
+                try? await Task.sleep(for: .milliseconds(500))
+                continue
+            }
+
             let bodyText = scrape.bodyText ?? ""
             let codeReview = OpenAIDashboardParser.parseCodeReviewRemainingPercent(bodyText: bodyText)
+            let sparkRemaining = OpenAIDashboardParser.parseSparkRemainingPercent(bodyText: bodyText)
             let events = OpenAIDashboardParser.parseCreditEvents(rows: scrape.rows)
             let breakdown = OpenAIDashboardSnapshot.makeDailyBreakdown(from: events, maxDays: 30)
             let usageBreakdown = scrape.usageBreakdown
             let rateLimits = OpenAIDashboardParser.parseRateLimits(bodyText: bodyText)
+            let hasPrimaryLimit = rateLimits.primary != nil
             let creditsRemaining = OpenAIDashboardParser.parseCreditsRemaining(bodyText: bodyText)
             let accountPlan = scrape.bodyHTML.flatMap(OpenAIDashboardParser.parsePlanFromHTML)
             let hasUsageLimits = rateLimits.primary != nil || rateLimits.secondary != nil
 
             if codeReview != nil, codeReviewFirstSeenAt == nil { codeReviewFirstSeenAt = Date() }
             if anyDashboardSignalAt == nil,
-               codeReview != nil || !usageBreakdown.isEmpty || scrape.creditsHeaderPresent ||
+               codeReview != nil || sparkRemaining != nil || !usageBreakdown.isEmpty || scrape.creditsHeaderPresent ||
                hasUsageLimits || creditsRemaining != nil
             {
                 anyDashboardSignalAt = Date()
@@ -176,7 +201,8 @@ public struct OpenAIDashboardFetcher {
                 log("credits purchase url: \(purchaseURL)")
             }
             if events.isEmpty,
-               codeReview != nil || !usageBreakdown.isEmpty || hasUsageLimits || creditsRemaining != nil
+               codeReview != nil || sparkRemaining != nil || !usageBreakdown.isEmpty ||
+               hasUsageLimits || creditsRemaining != nil
             {
                 log(
                     "credits header present=\(scrape.creditsHeaderPresent) " +
@@ -206,9 +232,14 @@ public struct OpenAIDashboardFetcher {
                 }
             }
 
-            if codeReview != nil || !events.isEmpty || !usageBreakdown
+            if codeReview != nil || sparkRemaining != nil || !events.isEmpty || !usageBreakdown
                 .isEmpty || hasUsageLimits || creditsRemaining != nil
             {
+                if requirePrimaryUsageLimit, !hasPrimaryLimit {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    continue
+                }
+
                 // The usage breakdown chart is hydrated asynchronously. When code review is already present,
                 // give it a moment to populate so the menu can show it.
                 if codeReview != nil, usageBreakdown.isEmpty {
@@ -221,6 +252,7 @@ public struct OpenAIDashboardFetcher {
                 return OpenAIDashboardSnapshot(
                     signedInEmail: scrape.signedInEmail,
                     codeReviewRemainingPercent: codeReview,
+                    sparkRemainingPercent: sparkRemaining,
                     creditEvents: events,
                     dailyBreakdown: breakdown,
                     usageBreakdown: usageBreakdown,
@@ -288,6 +320,7 @@ public struct OpenAIDashboardFetcher {
         let deadline = Date().addingTimeInterval(timeout)
         var lastBody: String?
         var lastHref: String?
+        var loginSignalFirstSeenAt: Date?
 
         while Date() < deadline {
             let scrape = try await self.scrape(webView: webView)
@@ -299,15 +332,36 @@ public struct OpenAIDashboardFetcher {
                 continue
             }
 
+            if scrape.loginRequired {
+                let now = Date()
+                let hrefLower = scrape.href?.lowercased() ?? ""
+                let onExplicitLoginRoute = hrefLower.contains("/auth/") || hrefLower.contains("/login")
+                let hasSignedInEmail = scrape.signedInEmail?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .isEmpty == false
+                let authStatus = scrape.authStatus?.lowercased()
+                if loginSignalFirstSeenAt == nil { loginSignalFirstSeenAt = now }
+                let elapsed = now.timeIntervalSince(loginSignalFirstSeenAt ?? now)
+                let shouldRetryTransientLogin = authStatus == "logged_in" || hasSignedInEmail
+                    || (!onExplicitLoginRoute && elapsed < 6)
+                if shouldRetryTransientLogin {
+                    if !onExplicitLoginRoute {
+                        _ = webView.load(URLRequest(url: self.usageURL))
+                    }
+                    try? await Task.sleep(for: .milliseconds(500))
+                    continue
+                }
+                throw FetchError.loginRequired
+            }
+            loginSignalFirstSeenAt = nil
+            if scrape.cloudflareInterstitial {
+                throw FetchError.noDashboardData(body: "Cloudflare challenge detected in WebView.")
+            }
+
             if let href = scrape.href, !href.contains("/codex/settings/usage") {
                 _ = webView.load(URLRequest(url: self.usageURL))
                 try? await Task.sleep(for: .milliseconds(500))
                 continue
-            }
-
-            if scrape.loginRequired { throw FetchError.loginRequired }
-            if scrape.cloudflareInterstitial {
-                throw FetchError.noDashboardData(body: "Cloudflare challenge detected in WebView.")
             }
 
             return ProbeResult(
@@ -339,6 +393,7 @@ public struct OpenAIDashboardFetcher {
         let bodyText: String?
         let bodyHTML: String?
         let signedInEmail: String?
+        let authStatus: String?
         let creditsPurchaseURL: String?
         let rows: [[String]]
         let usageBreakdown: [OpenAIDashboardDailyBreakdown]
@@ -362,6 +417,7 @@ public struct OpenAIDashboardFetcher {
                 bodyText: nil,
                 bodyHTML: nil,
                 signedInEmail: nil,
+                authStatus: nil,
                 creditsPurchaseURL: nil,
                 rows: [],
                 usageBreakdown: [],
@@ -399,10 +455,14 @@ public struct OpenAIDashboardFetcher {
             signedInEmail = OpenAIDashboardParser.parseSignedInEmailFromClientBootstrap(html: bodyHTML)
         }
 
-        if let bodyHTML, let authStatus = OpenAIDashboardParser.parseAuthStatusFromClientBootstrap(html: bodyHTML) {
-            if authStatus.lowercased() != "logged_in" {
-                // When logged out, the SPA can render a generic landing shell without obvious auth inputs,
-                // so treat it as login-required and let the caller retry cookie import.
+        let rawAuthStatus = bodyHTML
+            .flatMap { OpenAIDashboardParser.parseAuthStatusFromClientBootstrap(html: $0) }
+        let authStatus = rawAuthStatus?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let authStatus = authStatus?.lowercased() {
+            if authStatus == "logged_in" {
+                loginRequired = false
+            } else if authStatus == "logged_out" {
+                // Logged-out pages can render a generic shell without auth inputs.
                 loginRequired = true
             }
         }
@@ -415,6 +475,7 @@ public struct OpenAIDashboardFetcher {
             bodyText: dict["bodyText"] as? String,
             bodyHTML: bodyHTML,
             signedInEmail: signedInEmail,
+            authStatus: authStatus,
             creditsPurchaseURL: dict["creditsPurchaseURL"] as? String,
             rows: rows,
             usageBreakdown: usageBreakdown,
@@ -484,6 +545,7 @@ public struct OpenAIDashboardFetcher {
         accountEmail _: String?,
         logger _: ((String) -> Void)? = nil,
         debugDumpHTML _: Bool = false,
+        requirePrimaryUsageLimit _: Bool = false,
         timeout _: TimeInterval = 60) async throws -> OpenAIDashboardSnapshot
     {
         throw FetchError.noDashboardData(body: "OpenAI web dashboard fetch is only supported on macOS.")

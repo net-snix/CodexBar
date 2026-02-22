@@ -1,3 +1,4 @@
+import CodexBarCore
 import Foundation
 import Testing
 @testable import CodexBarCLI
@@ -26,5 +27,21 @@ struct CLIOutputTests {
         #expect(first?["provider"] as? String == "cli")
         let error = first?["error"] as? [String: Any]
         #expect(error?["message"] as? String == "Nope")
+    }
+
+    @Test
+    func renderOpenAIWebDashboardTextIncludesSpark() {
+        let snapshot = OpenAIDashboardSnapshot(
+            signedInEmail: "codex@example.com",
+            codeReviewRemainingPercent: 73,
+            sparkRemainingPercent: 41,
+            creditEvents: [],
+            dailyBreakdown: [],
+            usageBreakdown: [],
+            creditsPurchaseURL: nil,
+            updatedAt: Date())
+        let text = CodexBarCLI.renderOpenAIWebDashboardText(snapshot)
+        #expect(text.contains("Code review: 73% remaining"))
+        #expect(text.contains("Spark: 41% remaining"))
     }
 }

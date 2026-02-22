@@ -21,7 +21,7 @@ public enum CodexProviderDescriptor {
                 defaultEnabled: true,
                 isPrimaryProvider: true,
                 usesAccountFallback: true,
-                browserCookieOrder: ProviderBrowserCookieDefaults.defaultImportOrder,
+                browserCookieOrder: self.codexBrowserCookieOrder,
                 dashboardURL: "https://chatgpt.com/codex/settings/usage",
                 statusPageURL: "https://status.openai.com/"),
             branding: ProviderBranding(
@@ -72,6 +72,22 @@ public enum CodexProviderDescriptor {
                 return [oauth, cli]
             }
         }
+    }
+
+    private static var codexBrowserCookieOrder: BrowserCookieImportOrder? {
+        #if os(macOS)
+        var order = ProviderBrowserCookieDefaults.defaultImportOrder ?? []
+        guard !order.contains(.helium) else { return order }
+
+        if let chromeIndex = order.firstIndex(of: .chrome) {
+            order.insert(.helium, at: min(chromeIndex + 1, order.count))
+        } else {
+            order.append(.helium)
+        }
+        return order
+        #else
+        return ProviderBrowserCookieDefaults.defaultImportOrder
+        #endif
     }
 
     private static func noDataMessage() -> String {

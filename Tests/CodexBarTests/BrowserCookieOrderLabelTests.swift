@@ -18,5 +18,11 @@ struct BrowserCookieOrderStatusStringTests {
         let message = FactoryStatusProbeError.noSessionCookie.errorDescription ?? ""
         #expect(message.contains(order.loginHint))
     }
+
+    @Test
+    func codexOrderIncludesHelium() {
+        let order = ProviderDefaults.metadata[.codex]?.browserCookieOrder ?? []
+        #expect(order.contains(.helium))
+    }
     #endif
 }

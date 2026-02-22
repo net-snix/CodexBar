@@ -140,6 +140,7 @@ extension CodexWebDashboardStrategy {
             accountEmail: effectiveEmail,
             logger: logger,
             debugDumpHTML: options.debugDumpHTML,
+            requirePrimaryUsageLimit: true,
             timeout: options.timeout)
         let cacheEmail = effectiveEmail ?? dash.signedInEmail?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let cacheEmail, !cacheEmail.isEmpty {

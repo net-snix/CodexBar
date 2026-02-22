@@ -284,10 +284,18 @@ private struct RefreshIconButton: View {
 
     var body: some View {
         Button(action: self.action) {
-            Image(systemName: "arrow.clockwise")
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
-                .frame(width: 18, height: 18)
+            Group {
+                if self.isRefreshing {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .frame(width: 18, height: 18)
+                } else {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
+                        .frame(width: 18, height: 18)
+                }
+            }
         }
         .buttonStyle(CopyIconButtonStyle(isHighlighted: self.isHighlighted))
         .disabled(self.isRefreshing)
@@ -894,6 +902,20 @@ extension UsageMenuCardView.Model {
             metrics.append(Metric(
                 id: "code-review",
                 title: "Code review",
+                percent: Self.clamped(percent),
+                percentStyle: percentStyle,
+                resetText: nil,
+                detailText: nil,
+                detailLeftText: nil,
+                detailRightText: nil,
+                pacePercent: nil,
+                paceOnTop: true))
+        }
+        if input.provider == .codex, let remaining = input.dashboard?.sparkRemainingPercent {
+            let percent = input.usageBarsShowUsed ? (100 - remaining) : remaining
+            metrics.append(Metric(
+                id: "spark",
+                title: "Spark",
                 percent: Self.clamped(percent),
                 percentStyle: percentStyle,
                 resetText: nil,
