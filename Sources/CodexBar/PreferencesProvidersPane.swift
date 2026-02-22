@@ -345,7 +345,8 @@ struct ProvidersPane: View {
             tokenCostUsageEnabled: self.settings.isCostUsageEffectivelyEnabled(for: provider),
             showOptionalCreditsAndExtraUsage: self.settings.showOptionalCreditsAndExtraUsage,
             hidePersonalInfo: self.settings.hidePersonalInfo,
-            now: Date())
+            now: Date(),
+            refreshAction: nil)
         return UsageMenuCardView.Model.make(input)
     }
 

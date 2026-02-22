@@ -286,6 +286,49 @@ struct MenuCardModelTests {
     }
 
     @Test
+    func costSectionCarriesRefreshActionState() throws {
+        let now = Date()
+        let metadata = try #require(ProviderDefaults.metadata[.codex])
+        let snapshot = UsageSnapshot(
+            primary: RateWindow(usedPercent: 0, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
+            secondary: nil,
+            tertiary: nil,
+            updatedAt: now)
+        let tokenSnapshot = CostUsageTokenSnapshot(
+            sessionTokens: 123,
+            sessionCostUSD: 1.23,
+            last30DaysTokens: 456,
+            last30DaysCostUSD: 78.9,
+            daily: [],
+            updatedAt: now)
+
+        let model = UsageMenuCardView.Model.make(.init(
+            provider: .codex,
+            metadata: metadata,
+            snapshot: snapshot,
+            credits: nil,
+            creditsError: nil,
+            dashboard: nil,
+            dashboardError: nil,
+            tokenSnapshot: tokenSnapshot,
+            tokenError: nil,
+            account: AccountInfo(email: nil, plan: nil),
+            isRefreshing: true,
+            lastError: nil,
+            usageBarsShowUsed: false,
+            resetTimeDisplayStyle: .countdown,
+            tokenCostUsageEnabled: true,
+            showOptionalCreditsAndExtraUsage: true,
+            hidePersonalInfo: false,
+            now: now,
+            refreshAction: {}))
+
+        #expect(model.tokenUsage != nil)
+        #expect(model.isRefreshing == true)
+        #expect(model.refreshAction != nil)
+    }
+
+    @Test
     func claudeModelDoesNotLeakCodexPlan() throws {
         let metadata = try #require(ProviderDefaults.metadata[.claude])
         let model = UsageMenuCardView.Model.make(.init(

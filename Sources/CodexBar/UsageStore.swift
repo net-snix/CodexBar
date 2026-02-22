@@ -435,7 +435,14 @@ final class UsageStore {
     }
 
     func refresh(forceTokenUsage: Bool = false) async {
-        guard !self.isRefreshing else { return }
+        guard !self.isRefreshing else {
+            // A user-initiated refresh can arrive while an automatic/provider refresh is still running.
+            // Still force token-cost refresh so the Cost section updates on click.
+            if forceTokenUsage {
+                self.scheduleTokenRefresh(force: true)
+            }
+            return
+        }
         let refreshPhase: ProviderRefreshPhase = self.hasCompletedInitialRefresh ? .regular : .startup
 
         await ProviderRefreshContext.$current.withValue(refreshPhase) {

@@ -21,6 +21,7 @@ read_when:
 ## Menu card
 - Session + weekly rows with resets (countdown by default; optional absolute clock display).
 - Codex-only: Credits + “Buy Credits…” in-card action.
+- Cost section includes an in-card refresh button (same behavior as menu “Refresh”) for usage + token-cost refresh.
 - Web-only rows (when OpenAI cookies are enabled): code review remaining, usage breakdown submenu.
 - Token accounts: optional account switcher bar or stacked account cards (up to 6) when multiple manual tokens exist.
 

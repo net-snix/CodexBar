@@ -66,6 +66,8 @@ struct UsageMenuCardView: View {
         let subtitleText: String
         let subtitleStyle: SubtitleStyle
         let planText: String?
+        let isRefreshing: Bool
+        let refreshAction: (() -> Void)?
         let metrics: [Metric]
         let creditsText: String?
         let creditsRemaining: Double?
@@ -135,9 +137,7 @@ struct UsageMenuCardView: View {
                     }
                     if let tokenUsage = self.model.tokenUsage {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Cost")
-                                .font(.body)
-                                .fontWeight(.medium)
+                            CostSectionHeader(model: self.model, isHighlighted: self.isHighlighted)
                             Text(tokenUsage.sessionLine)
                                 .font(.footnote)
                             Text(tokenUsage.monthLine)
@@ -274,6 +274,44 @@ private struct CopyIconButton: View {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(self.copyText, forType: .string)
+    }
+}
+
+private struct RefreshIconButton: View {
+    let action: () -> Void
+    let isRefreshing: Bool
+    let isHighlighted: Bool
+
+    var body: some View {
+        Button(action: self.action) {
+            Image(systemName: "arrow.clockwise")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(MenuHighlightStyle.secondary(self.isHighlighted))
+                .frame(width: 18, height: 18)
+        }
+        .buttonStyle(CopyIconButtonStyle(isHighlighted: self.isHighlighted))
+        .disabled(self.isRefreshing)
+        .opacity(self.isRefreshing ? 0.6 : 1)
+        .accessibilityLabel(self.isRefreshing ? "Refreshing" : "Refresh usage and cost")
+    }
+}
+
+private struct CostSectionHeader: View {
+    let model: UsageMenuCardView.Model
+    let isHighlighted: Bool
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("Cost")
+                .font(.body)
+                .fontWeight(.medium)
+            if let refreshAction = self.model.refreshAction {
+                RefreshIconButton(
+                    action: refreshAction,
+                    isRefreshing: self.model.isRefreshing,
+                    isHighlighted: self.isHighlighted)
+            }
+        }
     }
 }
 
@@ -513,9 +551,7 @@ struct UsageMenuCardCostSectionView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     if let tokenUsage = self.model.tokenUsage {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Cost")
-                                .font(.body)
-                                .fontWeight(.medium)
+                            CostSectionHeader(model: self.model, isHighlighted: self.isHighlighted)
                             Text(tokenUsage.sessionLine)
                                 .font(.caption)
                             Text(tokenUsage.monthLine)
@@ -592,6 +628,49 @@ extension UsageMenuCardView.Model {
         let showOptionalCreditsAndExtraUsage: Bool
         let hidePersonalInfo: Bool
         let now: Date
+        let refreshAction: (() -> Void)?
+
+        init(
+            provider: UsageProvider,
+            metadata: ProviderMetadata,
+            snapshot: UsageSnapshot?,
+            credits: CreditsSnapshot?,
+            creditsError: String?,
+            dashboard: OpenAIDashboardSnapshot?,
+            dashboardError: String?,
+            tokenSnapshot: CostUsageTokenSnapshot?,
+            tokenError: String?,
+            account: AccountInfo,
+            isRefreshing: Bool,
+            lastError: String?,
+            usageBarsShowUsed: Bool,
+            resetTimeDisplayStyle: ResetTimeDisplayStyle,
+            tokenCostUsageEnabled: Bool,
+            showOptionalCreditsAndExtraUsage: Bool,
+            hidePersonalInfo: Bool,
+            now: Date,
+            refreshAction: (() -> Void)? = nil)
+        {
+            self.provider = provider
+            self.metadata = metadata
+            self.snapshot = snapshot
+            self.credits = credits
+            self.creditsError = creditsError
+            self.dashboard = dashboard
+            self.dashboardError = dashboardError
+            self.tokenSnapshot = tokenSnapshot
+            self.tokenError = tokenError
+            self.account = account
+            self.isRefreshing = isRefreshing
+            self.lastError = lastError
+            self.usageBarsShowUsed = usageBarsShowUsed
+            self.resetTimeDisplayStyle = resetTimeDisplayStyle
+            self.tokenCostUsageEnabled = tokenCostUsageEnabled
+            self.showOptionalCreditsAndExtraUsage = showOptionalCreditsAndExtraUsage
+            self.hidePersonalInfo = hidePersonalInfo
+            self.now = now
+            self.refreshAction = refreshAction
+        }
     }
 
     static func make(_ input: Input) -> UsageMenuCardView.Model {
@@ -629,6 +708,8 @@ extension UsageMenuCardView.Model {
             subtitleText: redacted.subtitleText,
             subtitleStyle: subtitle.style,
             planText: planText,
+            isRefreshing: input.isRefreshing,
+            refreshAction: input.refreshAction,
             metrics: metrics,
             creditsText: creditsText,
             creditsRemaining: input.credits?.remaining,

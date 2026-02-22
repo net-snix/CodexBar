@@ -543,7 +543,14 @@ enum CostUsageScanner {
 
         for day in dayKeys {
             guard let models = cache.days[day] else { continue }
-            let modelNames = models.keys.sorted()
+            var normalizedModels: [String: [Int]] = [:]
+            for (rawModel, packed) in models {
+                let model = CostUsagePricing.normalizeCodexModel(rawModel)
+                let existing = normalizedModels[model] ?? []
+                normalizedModels[model] = Self.addPacked(a: existing, b: packed, sign: 1)
+            }
+
+            let modelNames = normalizedModels.keys.sorted()
 
             var dayInput = 0
             var dayOutput = 0
@@ -553,7 +560,7 @@ enum CostUsageScanner {
             var dayCostSeen = false
 
             for model in modelNames {
-                let packed = models[model] ?? [0, 0, 0]
+                let packed = normalizedModels[model] ?? [0, 0, 0]
                 let input = packed[safe: 0] ?? 0
                 let cached = packed[safe: 1] ?? 0
                 let output = packed[safe: 2] ?? 0

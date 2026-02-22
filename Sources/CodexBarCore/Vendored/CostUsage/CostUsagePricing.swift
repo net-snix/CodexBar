@@ -41,7 +41,7 @@ enum CostUsagePricing {
             inputCostPerToken: 1.75e-6,
             outputCostPerToken: 1.4e-5,
             cacheReadInputCostPerToken: 1.75e-7),
-        "gpt-5.3": CodexPricing(
+        "gpt-5.3-codex": CodexPricing(
             inputCostPerToken: 1.75e-6,
             outputCostPerToken: 1.4e-5,
             cacheReadInputCostPerToken: 1.75e-7),
@@ -165,6 +165,12 @@ enum CostUsagePricing {
         if trimmed.hasPrefix("openai/") {
             trimmed = String(trimmed.dropFirst("openai/".count))
         }
+
+        // Canonicalize GPT-5.3 family to the published Codex model name.
+        if trimmed == "gpt-5.3" || trimmed.hasPrefix("gpt-5.3-codex") {
+            return "gpt-5.3-codex"
+        }
+
         if let codexRange = trimmed.range(of: "-codex") {
             let base = String(trimmed[..<codexRange.lowerBound])
             if self.codex[base] != nil { return base }

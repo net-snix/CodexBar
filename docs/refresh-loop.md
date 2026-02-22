@@ -13,7 +13,7 @@ read_when:
 
 ## Behavior
 - Background refresh runs off-main and updates `UsageStore` (usage + credits + optional web scrape).
-- Manual “Refresh now” always available in the menu.
+- Manual refresh available via the menu “Refresh” action and the in-card Cost refresh button.
 - Stale/error states dim the icon and surface status in-menu.
 
 ## Optional future

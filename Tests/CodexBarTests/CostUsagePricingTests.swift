@@ -8,8 +8,9 @@ struct CostUsagePricingTests {
         #expect(CostUsagePricing.normalizeCodexModel("openai/gpt-5-codex") == "gpt-5")
         #expect(CostUsagePricing.normalizeCodexModel("gpt-5.2-codex") == "gpt-5.2")
         #expect(CostUsagePricing.normalizeCodexModel("gpt-5.1-codex-max") == "gpt-5.1")
-        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex") == "gpt-5.3")
-        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-spark") == "gpt-5.3")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3") == "gpt-5.3-codex")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex") == "gpt-5.3-codex")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-spark") == "gpt-5.3-codex")
     }
 
     @Test

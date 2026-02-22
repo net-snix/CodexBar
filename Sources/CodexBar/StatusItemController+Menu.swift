@@ -764,12 +764,16 @@ extension StatusItemController {
                 topPadding: sectionSpacing,
                 bottomPadding: bottomPadding,
                 width: width)
-            let costSubmenu = webItems.hasCostHistory ? self.makeCostHistorySubmenu(provider: provider) : nil
+            // Keep the cost section itself non-submenu so embedded controls (refresh button) stay clickable.
+            let costSubmenu: NSMenu? = nil
             menu.addItem(self.makeMenuCardItem(
                 costView,
                 id: "menuCardCost",
                 width: width,
                 submenu: costSubmenu))
+            if webItems.hasCostHistory {
+                _ = self.addCostHistorySubmenu(to: menu, provider: provider)
+            }
         }
     }
 
@@ -1237,14 +1241,17 @@ extension StatusItemController {
             tokenSnapshot: tokenSnapshot,
             tokenError: tokenError,
             account: self.account,
-            isRefreshing: self.store.isRefreshing,
+            isRefreshing: self.store.isRefreshing || self.store.isTokenRefreshInFlight(for: target),
             lastError: errorOverride ?? self.store.error(for: target),
             usageBarsShowUsed: self.settings.usageBarsShowUsed,
             resetTimeDisplayStyle: self.settings.resetTimeDisplayStyle,
             tokenCostUsageEnabled: self.settings.isCostUsageEffectivelyEnabled(for: target),
             showOptionalCreditsAndExtraUsage: self.settings.showOptionalCreditsAndExtraUsage,
             hidePersonalInfo: self.settings.hidePersonalInfo,
-            now: Date())
+            now: Date(),
+            refreshAction: { [weak self] in
+                self?.refreshStore(forceTokenUsage: true)
+            })
         return UsageMenuCardView.Model.make(input)
     }
 

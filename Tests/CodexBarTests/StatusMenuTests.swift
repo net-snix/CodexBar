@@ -529,4 +529,67 @@ struct StatusMenuTests {
         let ids = menu.items.compactMap { $0.representedObject as? String }
         #expect(ids.contains("menuCardCost"))
     }
+
+    @Test
+    func costSectionUsesStandaloneHistoryMenuItemSoRefreshButtonCanBeClicked() {
+        self.disableMenuCardsForTesting()
+        let settings = self.makeSettings()
+        settings.statusChecksEnabled = false
+        settings.refreshFrequency = .manual
+        settings.mergeIcons = true
+        settings.selectedMenuProvider = .codex
+        settings.costUsageEnabled = true
+
+        let registry = ProviderRegistry.shared
+        if let codexMeta = registry.metadata[.codex] {
+            settings.setProviderEnabled(provider: .codex, metadata: codexMeta, enabled: true)
+        }
+        if let claudeMeta = registry.metadata[.claude] {
+            settings.setProviderEnabled(provider: .claude, metadata: claudeMeta, enabled: false)
+        }
+        if let geminiMeta = registry.metadata[.gemini] {
+            settings.setProviderEnabled(provider: .gemini, metadata: geminiMeta, enabled: false)
+        }
+
+        let fetcher = UsageFetcher()
+        let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
+        store._setSnapshotForTesting(
+            UsageSnapshot(
+                primary: RateWindow(usedPercent: 15, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                secondary: nil,
+                updatedAt: Date()),
+            provider: .codex)
+        store._setTokenSnapshotForTesting(CostUsageTokenSnapshot(
+            sessionTokens: 10,
+            sessionCostUSD: 0.01,
+            last30DaysTokens: 100,
+            last30DaysCostUSD: 1.0,
+            daily: [
+                CostUsageDailyReport.Entry(
+                    date: "2025-12-23",
+                    inputTokens: nil,
+                    outputTokens: nil,
+                    totalTokens: 100,
+                    costUSD: 1.0,
+                    modelsUsed: nil,
+                    modelBreakdowns: nil),
+            ],
+            updatedAt: Date()), provider: .codex)
+
+        let controller = StatusItemController(
+            store: store,
+            settings: settings,
+            account: fetcher.loadAccountInfo(),
+            updater: DisabledUpdaterController(),
+            preferencesSelection: PreferencesSelection(),
+            statusBar: self.makeStatusBarForTesting())
+
+        let menu = controller.makeMenu()
+        controller.menuWillOpen(menu)
+
+        let costItem = menu.items.first { ($0.representedObject as? String) == "menuCardCost" }
+        #expect(costItem != nil)
+        #expect(costItem?.submenu == nil)
+        #expect(menu.items.contains(where: { $0.title == "Usage history (30 days)" }))
+    }
 }

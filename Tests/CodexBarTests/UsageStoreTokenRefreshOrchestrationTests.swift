@@ -57,6 +57,24 @@ struct UsageStoreTokenRefreshOrchestrationTests {
         #expect(providers == [.vertexai, .claude, .codex])
     }
 
+    @Test
+    func forcedRefreshWhileBusyStillSchedulesTokenCostRefresh() async throws {
+        let settings = Self.makeSettingsStore(suite: "UsageStoreTokenRefreshOrchestrationTests-force-while-busy")
+        settings.costUsageEnabled = true
+        let metadata = ProviderRegistry.shared.metadata
+        try settings.setProviderEnabled(provider: .codex, metadata: #require(metadata[.codex]), enabled: true)
+        let store = Self.makeUsageStore(settings: settings)
+
+        store.isRefreshing = true
+        await store.refresh(forceTokenUsage: true)
+
+        for _ in 0..<60 where store.lastTokenFetchAt[.codex] == nil {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+
+        #expect(store.lastTokenFetchAt[.codex] != nil)
+    }
+
     private static func makeSettingsStore(suite: String) -> SettingsStore {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
