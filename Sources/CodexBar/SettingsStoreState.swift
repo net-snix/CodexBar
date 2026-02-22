@@ -32,6 +32,8 @@ struct SettingsDefaultsState: Sendable {
     var jetbrainsIDEBasePath: String
     var mergeIcons: Bool
     var switcherShowsIcons: Bool
+    var mergedMenuLastSelectedWasOverview: Bool
+    var mergedOverviewSelectedProvidersRaw: [String]
     var selectedMenuProviderRaw: String?
     var providerDetectionCompleted: Bool
 }
