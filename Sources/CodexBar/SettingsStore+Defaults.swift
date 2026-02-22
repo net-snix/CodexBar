@@ -338,9 +338,13 @@ extension SettingsStore {
     }
 
     var mergedOverviewSelectedProviders: [UsageProvider] {
-        get { Self.decodeProviders(self.mergedOverviewSelectedProvidersRaw, maxCount: 3) }
+        get {
+            Self.decodeProviders(
+                self.mergedOverviewSelectedProvidersRaw,
+                maxCount: Self.mergedOverviewProviderLimit)
+        }
         set {
-            let normalized = Self.normalizeProviders(newValue, maxCount: 3)
+            let normalized = Self.normalizeProviders(newValue, maxCount: Self.mergedOverviewProviderLimit)
             self.mergedOverviewSelectedProvidersRaw = normalized.map(\.rawValue)
         }
     }
@@ -351,7 +355,7 @@ extension SettingsStore {
 
     func resolvedMergedOverviewProviders(
         activeProviders: [UsageProvider],
-        maxVisibleProviders: Int = 3) -> [UsageProvider]
+        maxVisibleProviders: Int = SettingsStore.mergedOverviewProviderLimit) -> [UsageProvider]
     {
         guard maxVisibleProviders > 0 else { return [] }
         let normalizedActive = Self.normalizeProviders(activeProviders)
@@ -367,7 +371,7 @@ extension SettingsStore {
     @discardableResult
     func reconcileMergedOverviewSelectedProviders(
         activeProviders: [UsageProvider],
-        maxVisibleProviders: Int = 3) -> [UsageProvider]
+        maxVisibleProviders: Int = SettingsStore.mergedOverviewProviderLimit) -> [UsageProvider]
     {
         guard maxVisibleProviders > 0 else {
             if !self.mergedOverviewSelectedProviders.isEmpty {
@@ -405,7 +409,7 @@ extension SettingsStore {
         provider: UsageProvider,
         isSelected: Bool,
         activeProviders: [UsageProvider],
-        maxVisibleProviders: Int = 3) -> [UsageProvider]
+        maxVisibleProviders: Int = SettingsStore.mergedOverviewProviderLimit) -> [UsageProvider]
     {
         guard maxVisibleProviders > 0 else {
             self.mergedOverviewSelectedProviders = []
