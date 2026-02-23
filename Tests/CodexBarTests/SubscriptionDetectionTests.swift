@@ -62,4 +62,22 @@ struct SubscriptionDetectionTests {
         #expect(UsageStore.isSubscriptionPlan("api_key") == false)
         #expect(UsageStore.isSubscriptionPlan("console") == false)
     }
+
+    @Test
+    func detectsCodexProPlans() {
+        #expect(UsageStore.isCodexProPlan("ChatGPT Pro") == true)
+        #expect(UsageStore.isCodexProPlan("pro") == true)
+        #expect(UsageStore.isCodexProPlan("chatgptpro") == true)
+        #expect(UsageStore.isCodexProPlan("gpt-5.3-codex-spark") == true)
+        #expect(UsageStore.isCodexProPlan("5.3-codex-spark") == true)
+    }
+
+    @Test
+    func rejectsNonProCodexPlans() {
+        #expect(UsageStore.isCodexProPlan(nil) == false)
+        #expect(UsageStore.isCodexProPlan("") == false)
+        #expect(UsageStore.isCodexProPlan("Plus") == false)
+        #expect(UsageStore.isCodexProPlan("Enterprise") == false)
+        #expect(UsageStore.isCodexProPlan("Sparkle") == false)
+    }
 }

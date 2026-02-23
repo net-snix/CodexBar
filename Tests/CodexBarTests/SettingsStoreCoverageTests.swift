@@ -55,10 +55,11 @@ struct SettingsStoreCoverageTests {
     @Test
     func tokenAccountMutationsApplySideEffects() {
         let settings = Self.makeSettingsStore()
+        let claudeRuntimeEnabled = UsageProvider.allCases.contains(.claude)
 
         settings.addTokenAccount(provider: .claude, label: "Primary", token: "token")
         #expect(settings.tokenAccounts(for: .claude).count == 1)
-        #expect(settings.claudeCookieSource == .manual)
+        #expect(settings.claudeCookieSource == (claudeRuntimeEnabled ? .manual : .auto))
 
         let account = settings.selectedTokenAccount(for: .claude)
         #expect(account != nil)

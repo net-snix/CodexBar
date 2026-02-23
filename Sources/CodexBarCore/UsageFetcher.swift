@@ -52,6 +52,7 @@ public struct UsageSnapshot: Codable, Sendable {
     public let secondary: RateWindow?
     public let tertiary: RateWindow?
     public let providerCost: ProviderCostSnapshot?
+    public let codexExtraUsage: CodexExtraUsageSnapshot?
     public let zaiUsage: ZaiUsageSnapshot?
     public let minimaxUsage: MiniMaxUsageSnapshot?
     public let openRouterUsage: OpenRouterUsageSnapshot?
@@ -76,6 +77,7 @@ public struct UsageSnapshot: Codable, Sendable {
         secondary: RateWindow?,
         tertiary: RateWindow? = nil,
         providerCost: ProviderCostSnapshot? = nil,
+        codexExtraUsage: CodexExtraUsageSnapshot? = nil,
         zaiUsage: ZaiUsageSnapshot? = nil,
         minimaxUsage: MiniMaxUsageSnapshot? = nil,
         openRouterUsage: OpenRouterUsageSnapshot? = nil,
@@ -87,6 +89,7 @@ public struct UsageSnapshot: Codable, Sendable {
         self.secondary = secondary
         self.tertiary = tertiary
         self.providerCost = providerCost
+        self.codexExtraUsage = codexExtraUsage
         self.zaiUsage = zaiUsage
         self.minimaxUsage = minimaxUsage
         self.openRouterUsage = openRouterUsage
@@ -101,6 +104,7 @@ public struct UsageSnapshot: Codable, Sendable {
         self.secondary = try container.decodeIfPresent(RateWindow.self, forKey: .secondary)
         self.tertiary = try container.decodeIfPresent(RateWindow.self, forKey: .tertiary)
         self.providerCost = try container.decodeIfPresent(ProviderCostSnapshot.self, forKey: .providerCost)
+        self.codexExtraUsage = nil // Not persisted, fetched fresh each time
         self.zaiUsage = nil // Not persisted, fetched fresh each time
         self.minimaxUsage = nil // Not persisted, fetched fresh each time
         self.openRouterUsage = nil // Not persisted, fetched fresh each time
@@ -183,6 +187,7 @@ public struct UsageSnapshot: Codable, Sendable {
             secondary: self.secondary,
             tertiary: self.tertiary,
             providerCost: self.providerCost,
+            codexExtraUsage: self.codexExtraUsage,
             zaiUsage: self.zaiUsage,
             minimaxUsage: self.minimaxUsage,
             openRouterUsage: self.openRouterUsage,
@@ -196,6 +201,25 @@ public struct UsageSnapshot: Codable, Sendable {
         let scopedIdentity = identity.scoped(to: provider)
         if scopedIdentity.providerID == identity.providerID { return self }
         return self.withIdentity(scopedIdentity)
+    }
+}
+
+public struct CodexExtraUsageSnapshot: Codable, Equatable, Sendable {
+    public let codeReviewRemainingPercent: Double?
+    public let sparkRemainingPercent: Double?
+    public let sparkFiveHourWindow: RateWindow?
+    public let sparkSevenDayWindow: RateWindow?
+
+    public init(
+        codeReviewRemainingPercent: Double?,
+        sparkRemainingPercent: Double?,
+        sparkFiveHourWindow: RateWindow? = nil,
+        sparkSevenDayWindow: RateWindow? = nil)
+    {
+        self.codeReviewRemainingPercent = codeReviewRemainingPercent
+        self.sparkRemainingPercent = sparkRemainingPercent
+        self.sparkFiveHourWindow = sparkFiveHourWindow
+        self.sparkSevenDayWindow = sparkSevenDayWindow
     }
 }
 

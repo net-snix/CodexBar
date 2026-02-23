@@ -31,6 +31,10 @@ Usage source picker:
 - Reads OAuth tokens from `~/.codex/auth.json` (or `$CODEX_HOME/auth.json`).
 - Refreshes access tokens when `last_refresh` is older than 8 days.
 - Calls `GET https://chatgpt.com/backend-api/wham/usage` (default) with `Authorization: Bearer <token>`.
+- Parses Codex extra limits from API payload:
+  - `code_review_rate_limit` -> Code review remaining (%).
+  - `additional_rate_limits` Spark entries (for example `GPT-5.3-Codex-Spark`) ->
+    Spark 5h + 7d windows (percent + reset timestamp).
 
 ### OpenAI web dashboard (optional)
 - Preferences → Providers → Codex → OpenAI cookies (Automatic or Manual).
@@ -56,9 +60,15 @@ Usage source picker:
   - Rate limits (5h + weekly) parsed from body text.
   - Credits remaining parsed from body text.
   - Code review remaining (%).
+  - Codex Spark remaining (%) can also be scraped from web text.
   - Usage breakdown chart (Recharts bar data + legend colors).
   - Credits usage history table rows.
   - Credits purchase URL (best-effort).
+- Menu-card visibility toggles:
+  - Preferences → Providers → Codex → "Show Code review usage" controls the Code review row.
+  - Preferences → Providers → Codex → "Show Codex Spark usage" controls Spark rows.
+    If OAuth Spark windows are present, Spark is shown under a `Spark` header with `Session` (5h) + `Weekly` (7d)
+    rows and reset text.
 - Errors surfaced:
   - Login required or Cloudflare interstitial.
 

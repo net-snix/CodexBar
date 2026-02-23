@@ -81,7 +81,32 @@ struct CodexOAuthTests {
               "reset_at": 1767407914,
               "limit_window_seconds": 604800
             }
-          }
+          },
+          "code_review_rate_limit": {
+            "primary_window": {
+              "used_percent": 12,
+              "reset_at": 1767407914,
+              "limit_window_seconds": 604800
+            }
+          },
+          "additional_rate_limits": [
+            {
+              "limit_name": "GPT-5.3-Codex-Spark",
+              "metered_feature": "codex_bengalfox",
+              "rate_limit": {
+                "primary_window": {
+                  "used_percent": 17,
+                  "reset_at": 1766948068,
+                  "limit_window_seconds": 18000
+                },
+                "secondary_window": {
+                  "used_percent": 41,
+                  "reset_at": 1767407914,
+                  "limit_window_seconds": 604800
+                }
+              }
+            }
+          ]
         }
         """
         let creds = CodexOAuthCredentials(
@@ -97,6 +122,49 @@ struct CodexOAuthTests {
         #expect(snapshot.secondary?.windowMinutes == 10080)
         #expect(snapshot.primary?.resetsAt != nil)
         #expect(snapshot.secondary?.resetsAt != nil)
+        #expect(snapshot.codexExtraUsage?.codeReviewRemainingPercent == 88)
+        #expect(snapshot.codexExtraUsage?.sparkRemainingPercent == 59)
+        #expect(snapshot.codexExtraUsage?.sparkFiveHourWindow?.usedPercent == 17)
+        #expect(snapshot.codexExtraUsage?.sparkFiveHourWindow?.windowMinutes == 300)
+        #expect(snapshot.codexExtraUsage?.sparkSevenDayWindow?.usedPercent == 41)
+        #expect(snapshot.codexExtraUsage?.sparkSevenDayWindow?.windowMinutes == 10080)
+        #expect(snapshot.codexExtraUsage?.sparkFiveHourWindow?.resetsAt != nil)
+        #expect(snapshot.codexExtraUsage?.sparkSevenDayWindow?.resetsAt != nil)
+    }
+
+    @Test
+    func decodesAdditionalRateLimitsFromOAuth() throws {
+        let json = """
+        {
+          "email": "espen@example.com",
+          "plan_type": "pro",
+          "additional_rate_limits": [
+            {
+              "limit_name": "GPT-5.3-Codex-Spark",
+              "metered_feature": "codex_bengalfox",
+              "rate_limit": {
+                "primary_window": {
+                  "used_percent": 0,
+                  "reset_at": 1766948068,
+                  "limit_window_seconds": 18000
+                }
+              }
+            }
+          ],
+          "rate_limit": {
+            "primary_window": {
+              "used_percent": 22,
+              "reset_at": 1766948068,
+              "limit_window_seconds": 18000
+            }
+          }
+        }
+        """
+        let response = try CodexOAuthUsageFetcher._decodeUsageResponseForTesting(Data(json.utf8))
+        #expect(response.email == "espen@example.com")
+        #expect(response.additionalRateLimits?.count == 1)
+        #expect(response.additionalRateLimits?.first?.limitName == "GPT-5.3-Codex-Spark")
+        #expect(response.additionalRateLimits?.first?.meteredFeature == "codex_bengalfox")
     }
 
     @Test

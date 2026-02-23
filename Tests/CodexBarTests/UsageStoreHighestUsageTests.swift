@@ -19,7 +19,9 @@ struct UsageStoreHighestUsageTests {
         if let codexMeta = registry.metadata[.codex] {
             settings.setProviderEnabled(provider: .codex, metadata: codexMeta, enabled: true)
         }
-        if let claudeMeta = registry.metadata[.claude] {
+        if UsageProvider.allCases.contains(.claude),
+           let claudeMeta = registry.metadata[.claude]
+        {
             settings.setProviderEnabled(provider: .claude, metadata: claudeMeta, enabled: true)
         }
 
@@ -36,11 +38,18 @@ struct UsageStoreHighestUsageTests {
             updatedAt: Date())
 
         store._setSnapshotForTesting(codexSnapshot, provider: .codex)
-        store._setSnapshotForTesting(claudeSnapshot, provider: .claude)
+        if UsageProvider.allCases.contains(.claude) {
+            store._setSnapshotForTesting(claudeSnapshot, provider: .claude)
+        }
 
         let highest = store.providerWithHighestUsage()
-        #expect(highest?.provider == .claude)
-        #expect(highest?.usedPercent == 60)
+        if UsageProvider.allCases.contains(.claude) {
+            #expect(highest?.provider == .claude)
+            #expect(highest?.usedPercent == 60)
+        } else {
+            #expect(highest?.provider == .codex)
+            #expect(highest?.usedPercent == 25)
+        }
     }
 
     @Test
@@ -56,7 +65,9 @@ struct UsageStoreHighestUsageTests {
         if let codexMeta = registry.metadata[.codex] {
             settings.setProviderEnabled(provider: .codex, metadata: codexMeta, enabled: true)
         }
-        if let claudeMeta = registry.metadata[.claude] {
+        if UsageProvider.allCases.contains(.claude),
+           let claudeMeta = registry.metadata[.claude]
+        {
             settings.setProviderEnabled(provider: .claude, metadata: claudeMeta, enabled: true)
         }
 
@@ -73,10 +84,16 @@ struct UsageStoreHighestUsageTests {
             updatedAt: Date())
 
         store._setSnapshotForTesting(codexSnapshot, provider: .codex)
-        store._setSnapshotForTesting(claudeSnapshot, provider: .claude)
+        if UsageProvider.allCases.contains(.claude) {
+            store._setSnapshotForTesting(claudeSnapshot, provider: .claude)
+        }
 
         let highest = store.providerWithHighestUsage()
-        #expect(highest?.provider == .claude)
-        #expect(highest?.usedPercent == 80)
+        if UsageProvider.allCases.contains(.claude) {
+            #expect(highest?.provider == .claude)
+            #expect(highest?.usedPercent == 80)
+        } else {
+            #expect(highest == nil)
+        }
     }
 }

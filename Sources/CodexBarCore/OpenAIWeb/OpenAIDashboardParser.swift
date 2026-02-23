@@ -78,10 +78,17 @@ public enum OpenAIDashboardParser {
         for regex in self.sparkRegexes {
             let range = NSRange(cleaned.startIndex..<cleaned.endIndex, in: cleaned)
             guard let match = regex.firstMatch(in: cleaned, options: [], range: range),
-                  match.numberOfRanges >= 2,
-                  let r = Range(match.range(at: 1), in: cleaned)
+                  match.numberOfRanges >= 3,
+                  let valueRange = Range(match.range(at: 1), in: cleaned),
+                  let qualifierRange = Range(match.range(at: 2), in: cleaned)
             else { continue }
-            if let val = Double(cleaned[r]) { return min(100, max(0, val)) }
+            guard let value = Double(cleaned[valueRange]) else { continue }
+            let clamped = min(100, max(0, value))
+            let qualifier = cleaned[qualifierRange].lowercased()
+            if qualifier == "used" || qualifier == "usage" {
+                return min(100, max(0, 100 - clamped))
+            }
+            return clamped
         }
         return nil
     }
@@ -173,7 +180,9 @@ public enum OpenAIDashboardParser {
 
     private static let sparkRegexes: [NSRegularExpression] = {
         let patterns = [
-            #"\b(?:codex\s*)?spark\b[^0-9%]*([0-9]{1,3})%\s*(?:remaining|left)"#,
+            #"\b(?:codex[-\s]*)?spark\b[^0-9%]*([0-9]{1,3}(?:\.[0-9]+)?)\s*%\s*(remaining|left|used|usage)\b"#,
+            #"\b(?:gpt[-\s]?\d+(?:\.\d+)*[-\s]*)?(?:codex[-\s]*)?spark\b[\s\S]{0,40}?"# +
+                #"([0-9]{1,3}(?:\.[0-9]+)?)\s*%\s*(remaining|left|used|usage)\b"#,
         ]
         return patterns.compactMap { pattern in
             try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive])

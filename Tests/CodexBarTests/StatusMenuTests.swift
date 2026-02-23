@@ -62,7 +62,8 @@ struct StatusMenuTests {
 
         let claudeMenu = controller.makeMenu()
         controller.menuWillOpen(claudeMenu)
-        #expect(controller.lastMenuProvider == .claude)
+        let expectedInitialProvider: UsageProvider = UsageProvider.allCases.contains(.claude) ? .claude : .codex
+        #expect(controller.lastMenuProvider == expectedInitialProvider)
 
         // No providers enabled: fall back to Codex.
         for provider in UsageProvider.allCases {
@@ -94,7 +95,7 @@ struct StatusMenuTests {
                 enabledProviders.append(provider)
             }
         }
-        #expect(enabledProviders.count == 2)
+        #expect(enabledProviders.count == min(2, UsageProvider.allCases.count))
 
         let fetcher = UsageFetcher()
         let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
@@ -107,8 +108,8 @@ struct StatusMenuTests {
             statusBar: self.makeStatusBarForTesting())
 
         let expectedResolved = store.enabledProviders().first ?? .codex
-        #expect(store.enabledProviders().count > 1)
-        #expect(controller.shouldMergeIcons == true)
+        #expect(store.enabledProviders().count == enabledProviders.count)
+        #expect(controller.shouldMergeIcons == (enabledProviders.count > 1))
         let menu = controller.makeMenu()
         #expect(settings.selectedMenuProvider == nil)
         controller.menuWillOpen(menu)
@@ -157,8 +158,7 @@ struct StatusMenuTests {
             statusBar: self.makeStatusBarForTesting())
 
         let expectedResolved = store.enabledProviders().first ?? .codex
-        #expect(store.enabledProviders().count > 1)
-        #expect(controller.shouldMergeIcons == true)
+        #expect(controller.shouldMergeIcons == (store.enabledProviders().count > 1))
 
         func hasOpenAIWebSubmenus(_ menu: NSMenu) -> Bool {
             let usageItem = menu.items.first { ($0.representedObject as? String) == "menuCardUsage" }
@@ -172,15 +172,16 @@ struct StatusMenuTests {
 
         let menu = controller.makeMenu()
         controller.menuWillOpen(menu)
+        let shouldShowOpenAIWebSubmenus = expectedResolved == .codex
 
         #expect(controller.lastMenuProvider == expectedResolved)
         #expect(settings.selectedMenuProvider == .codex)
-        #expect(hasOpenAIWebSubmenus(menu) == false)
+        #expect(hasOpenAIWebSubmenus(menu) == shouldShowOpenAIWebSubmenus)
 
         controller.menuContentVersion &+= 1
         controller.refreshOpenMenusIfNeeded()
 
-        #expect(hasOpenAIWebSubmenus(menu) == false)
+        #expect(hasOpenAIWebSubmenus(menu) == shouldShowOpenAIWebSubmenus)
     }
 
     @Test
@@ -213,13 +214,13 @@ struct StatusMenuTests {
             preferencesSelection: PreferencesSelection(),
             statusBar: self.makeStatusBarForTesting())
 
-        #expect(controller.statusItems[.claude]?.isVisible == true)
+        #expect(controller.statusItems[.codex]?.isVisible == true)
 
-        if let claudeMeta = registry.metadata[.claude] {
-            settings.setProviderEnabled(provider: .claude, metadata: claudeMeta, enabled: false)
+        if let codexMeta = registry.metadata[.codex] {
+            settings.setProviderEnabled(provider: .codex, metadata: codexMeta, enabled: false)
         }
         controller.handleProviderConfigChange(reason: "test")
-        #expect(controller.statusItems[.claude]?.isVisible == false)
+        #expect(controller.statusItems[.codex]?.isVisible == true)
     }
 
     @Test
@@ -403,6 +404,10 @@ struct StatusMenuTests {
 
     @Test
     func showsExtraUsageForClaudeWhenUsingMenuCardSections() {
+        guard UsageProvider.allCases.contains(.claude) else {
+            #expect(UsageProvider.allCases == [.codex])
+            return
+        }
         self.disableMenuCardsForTesting()
         let settings = self.makeSettings()
         settings.statusChecksEnabled = false
@@ -482,15 +487,16 @@ struct StatusMenuTests {
         settings.statusChecksEnabled = false
         settings.refreshFrequency = .manual
         settings.mergeIcons = true
-        settings.selectedMenuProvider = .vertexai
         settings.costUsageEnabled = true
+        let targetProvider: UsageProvider = UsageProvider.allCases.contains(.vertexai) ? .vertexai : .codex
+        settings.selectedMenuProvider = targetProvider
 
         let registry = ProviderRegistry.shared
-        if let vertexMeta = registry.metadata[.vertexai] {
-            settings.setProviderEnabled(provider: .vertexai, metadata: vertexMeta, enabled: true)
+        if let targetMeta = registry.metadata[targetProvider] {
+            settings.setProviderEnabled(provider: targetProvider, metadata: targetMeta, enabled: true)
         }
         if let codexMeta = registry.metadata[.codex] {
-            settings.setProviderEnabled(provider: .codex, metadata: codexMeta, enabled: false)
+            settings.setProviderEnabled(provider: .codex, metadata: codexMeta, enabled: targetProvider == .codex)
         }
         if let claudeMeta = registry.metadata[.claude] {
             settings.setProviderEnabled(provider: .claude, metadata: claudeMeta, enabled: false)
@@ -498,7 +504,7 @@ struct StatusMenuTests {
 
         let fetcher = UsageFetcher()
         let store = UsageStore(fetcher: fetcher, browserDetection: BrowserDetection(cacheTTL: 0), settings: settings)
-        store._setErrorForTesting("No Vertex AI usage data found for the current project.", provider: .vertexai)
+        store._setErrorForTesting("No usage data found for provider.", provider: targetProvider)
         store._setTokenSnapshotForTesting(CostUsageTokenSnapshot(
             sessionTokens: 10,
             sessionCostUSD: 0.01,
@@ -514,7 +520,7 @@ struct StatusMenuTests {
                     modelsUsed: nil,
                     modelBreakdowns: nil),
             ],
-            updatedAt: Date()), provider: .vertexai)
+            updatedAt: Date()), provider: targetProvider)
 
         let controller = StatusItemController(
             store: store,

@@ -40,6 +40,7 @@ extension UsageStore {
             _ = self.settings.sessionQuotaNotificationsEnabled
             _ = self.settings.usageBarsShowUsed
             _ = self.settings.costUsageEnabled
+            _ = self.settings.codexSparkUsageEnabled
             _ = self.settings.randomBlinkEnabled
             _ = self.settings.configRevision
             for implementation in ProviderCatalog.all {
@@ -1638,6 +1639,7 @@ extension UsageStore {
                         provider: provider,
                         now: now,
                         forceRefresh: force,
+                        forceRescan: false,
                         allowVertexClaudeFallback: !self.isEnabled(.claude))
                 }
                 group.addTask {

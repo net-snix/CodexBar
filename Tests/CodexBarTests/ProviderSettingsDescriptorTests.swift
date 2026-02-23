@@ -124,6 +124,217 @@ struct ProviderSettingsDescriptorTests {
     }
 
     @Test
+    func codexSparkToggleDisabledForNonPro() throws {
+        let suite = "ProviderSettingsDescriptorTests-codex-spark-non-pro"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let configStore = testConfigStore(suiteName: suite)
+        let settings = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+        let store = UsageStore(
+            fetcher: UsageFetcher(environment: [:]),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings)
+
+        let context = ProviderSettingsContext(
+            provider: .codex,
+            settings: settings,
+            store: store,
+            boolBinding: { keyPath in
+                Binding(
+                    get: { settings[keyPath: keyPath] },
+                    set: { settings[keyPath: keyPath] = $0 })
+            },
+            stringBinding: { keyPath in
+                Binding(
+                    get: { settings[keyPath: keyPath] },
+                    set: { settings[keyPath: keyPath] = $0 })
+            },
+            statusText: { _ in nil },
+            setStatusText: { _, _ in },
+            lastAppActiveRunAt: { _ in nil },
+            setLastAppActiveRunAt: { _, _ in },
+            requestConfirmation: { _ in })
+
+        let toggle = try #require(
+            CodexProviderImplementation()
+                .settingsToggles(context: context)
+                .first(where: { $0.id == "codex-spark-usage" }))
+        #expect(toggle.isVisible?() ?? true)
+        #expect(toggle.isEnabled?() == false)
+        #expect(toggle.binding.wrappedValue == false)
+        #expect(toggle.statusText?() == "User is not subscribed to Pro.")
+    }
+
+    @Test
+    func codexCodeReviewToggleDefaultsDisabled() throws {
+        let suite = "ProviderSettingsDescriptorTests-codex-code-review"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let configStore = testConfigStore(suiteName: suite)
+        let settings = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+        let store = UsageStore(
+            fetcher: UsageFetcher(environment: [:]),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings)
+
+        let context = ProviderSettingsContext(
+            provider: .codex,
+            settings: settings,
+            store: store,
+            boolBinding: { keyPath in
+                Binding(
+                    get: { settings[keyPath: keyPath] },
+                    set: { settings[keyPath: keyPath] = $0 })
+            },
+            stringBinding: { keyPath in
+                Binding(
+                    get: { settings[keyPath: keyPath] },
+                    set: { settings[keyPath: keyPath] = $0 })
+            },
+            statusText: { _ in nil },
+            setStatusText: { _, _ in },
+            lastAppActiveRunAt: { _ in nil },
+            setLastAppActiveRunAt: { _, _ in },
+            requestConfirmation: { _ in })
+
+        let toggle = try #require(
+            CodexProviderImplementation()
+                .settingsToggles(context: context)
+                .first(where: { $0.id == "codex-code-review-usage" }))
+        #expect(toggle.isVisible?() ?? true)
+        #expect(toggle.isEnabled?() ?? true)
+        #expect(toggle.binding.wrappedValue == false)
+    }
+
+    @Test
+    func codexSparkToggleEnabledForPro() throws {
+        let suite = "ProviderSettingsDescriptorTests-codex-spark-pro"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let configStore = testConfigStore(suiteName: suite)
+        let settings = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+        let store = UsageStore(
+            fetcher: UsageFetcher(environment: [:]),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings)
+
+        let identity = ProviderIdentitySnapshot(
+            providerID: .codex,
+            accountEmail: "pro@example.com",
+            accountOrganization: nil,
+            loginMethod: "ChatGPT Pro")
+        store._setSnapshotForTesting(
+            UsageSnapshot(
+                primary: nil,
+                secondary: nil,
+                tertiary: nil,
+                updatedAt: Date(),
+                identity: identity),
+            provider: .codex)
+
+        let context = ProviderSettingsContext(
+            provider: .codex,
+            settings: settings,
+            store: store,
+            boolBinding: { keyPath in
+                Binding(
+                    get: { settings[keyPath: keyPath] },
+                    set: { settings[keyPath: keyPath] = $0 })
+            },
+            stringBinding: { keyPath in
+                Binding(
+                    get: { settings[keyPath: keyPath] },
+                    set: { settings[keyPath: keyPath] = $0 })
+            },
+            statusText: { _ in nil },
+            setStatusText: { _, _ in },
+            lastAppActiveRunAt: { _ in nil },
+            setLastAppActiveRunAt: { _, _ in },
+            requestConfirmation: { _ in })
+
+        let toggle = try #require(
+            CodexProviderImplementation()
+                .settingsToggles(context: context)
+                .first(where: { $0.id == "codex-spark-usage" }))
+        #expect(toggle.isVisible?() ?? true)
+        #expect(toggle.isEnabled?() == true)
+        #expect(toggle.binding.wrappedValue == true)
+        #expect(toggle.statusText?() == nil)
+    }
+
+    @Test
+    func codexSparkToggleEnabledForSparkPlan() throws {
+        let suite = "ProviderSettingsDescriptorTests-codex-spark-plan"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        let configStore = testConfigStore(suiteName: suite)
+        let settings = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+        let store = UsageStore(
+            fetcher: UsageFetcher(environment: [:]),
+            browserDetection: BrowserDetection(cacheTTL: 0),
+            settings: settings)
+
+        let identity = ProviderIdentitySnapshot(
+            providerID: .codex,
+            accountEmail: "spark@example.com",
+            accountOrganization: nil,
+            loginMethod: "gpt-5.3-codex-spark")
+        store._setSnapshotForTesting(
+            UsageSnapshot(
+                primary: nil,
+                secondary: nil,
+                tertiary: nil,
+                updatedAt: Date(),
+                identity: identity),
+            provider: .codex)
+
+        let context = ProviderSettingsContext(
+            provider: .codex,
+            settings: settings,
+            store: store,
+            boolBinding: { keyPath in
+                Binding(
+                    get: { settings[keyPath: keyPath] },
+                    set: { settings[keyPath: keyPath] = $0 })
+            },
+            stringBinding: { keyPath in
+                Binding(
+                    get: { settings[keyPath: keyPath] },
+                    set: { settings[keyPath: keyPath] = $0 })
+            },
+            statusText: { _ in nil },
+            setStatusText: { _, _ in },
+            lastAppActiveRunAt: { _ in nil },
+            setLastAppActiveRunAt: { _, _ in },
+            requestConfirmation: { _ in })
+
+        let toggle = try #require(
+            CodexProviderImplementation()
+                .settingsToggles(context: context)
+                .first(where: { $0.id == "codex-spark-usage" }))
+        #expect(toggle.isVisible?() ?? true)
+        #expect(toggle.isEnabled?() == true)
+        #expect(toggle.binding.wrappedValue == true)
+        #expect(toggle.statusText?() == nil)
+    }
+
+    @Test
     func claudeExposesUsageAndCookiePickers() throws {
         let suite = "ProviderSettingsDescriptorTests-claude"
         let defaults = try #require(UserDefaults(suiteName: suite))

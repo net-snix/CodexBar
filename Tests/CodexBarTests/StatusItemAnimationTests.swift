@@ -126,6 +126,10 @@ struct StatusItemAnimationTests {
 
     @Test
     func warpNoBonusLayoutIsPreservedInShowUsedModeWhenBonusIsExhausted() {
+        guard UsageProvider.allCases.contains(.warp) else {
+            #expect(UsageProvider.allCases == [.codex])
+            return
+        }
         let settings = SettingsStore(
             configStore: testConfigStore(suiteName: "StatusItemAnimationTests-warp-no-bonus-used"),
             zaiTokenStore: NoopZaiTokenStore(),
@@ -179,6 +183,10 @@ struct StatusItemAnimationTests {
 
     @Test
     func warpBonusLaneIsPreservedInShowUsedModeWhenBonusIsUnused() {
+        guard UsageProvider.allCases.contains(.warp) else {
+            #expect(UsageProvider.allCases == [.codex])
+            return
+        }
         let settings = SettingsStore(
             configStore: testConfigStore(suiteName: "StatusItemAnimationTests-warp-unused-bonus-used"),
             zaiTokenStore: NoopZaiTokenStore(),

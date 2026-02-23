@@ -26,6 +26,8 @@ extension SettingsStore {
         _ = self.claudeWebExtrasEnabled
         _ = self.showOptionalCreditsAndExtraUsage
         _ = self.openAIWebAccessEnabled
+        _ = self.codexCodeReviewUsageEnabled
+        _ = self.codexSparkUsageEnabled
         _ = self.codexUsageDataSource
         _ = self.claudeUsageDataSource
         _ = self.codexCookieSource

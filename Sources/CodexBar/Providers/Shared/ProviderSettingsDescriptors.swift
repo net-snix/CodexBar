@@ -55,6 +55,9 @@ struct ProviderSettingsToggleDescriptor: Identifiable {
     /// Optional runtime visibility gate.
     let isVisible: (() -> Bool)?
 
+    /// Optional runtime enabled gate.
+    let isEnabled: (() -> Bool)?
+
     /// Called whenever the toggle changes.
     let onChange: ((_ enabled: Bool) async -> Void)?
 
@@ -63,6 +66,32 @@ struct ProviderSettingsToggleDescriptor: Identifiable {
 
     /// Called when the view appears while the toggle is enabled.
     let onAppearWhenEnabled: (() async -> Void)?
+
+    init(
+        id: String,
+        title: String,
+        subtitle: String,
+        binding: Binding<Bool>,
+        statusText: (() -> String?)? = nil,
+        actions: [ProviderSettingsActionDescriptor] = [],
+        isVisible: (() -> Bool)? = nil,
+        isEnabled: (() -> Bool)? = nil,
+        onChange: ((_ enabled: Bool) async -> Void)? = nil,
+        onAppDidBecomeActive: (() async -> Void)? = nil,
+        onAppearWhenEnabled: (() async -> Void)? = nil)
+    {
+        self.id = id
+        self.title = title
+        self.subtitle = subtitle
+        self.binding = binding
+        self.statusText = statusText
+        self.actions = actions
+        self.isVisible = isVisible
+        self.isEnabled = isEnabled
+        self.onChange = onChange
+        self.onAppDidBecomeActive = onAppDidBecomeActive
+        self.onAppearWhenEnabled = onAppearWhenEnabled
+    }
 }
 
 /// Shared text field descriptor rendered in the Providers settings pane.

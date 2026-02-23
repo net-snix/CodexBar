@@ -22,7 +22,14 @@ read_when:
 - Session + weekly rows with resets (countdown by default; optional absolute clock display).
 - Codex-only: Credits + “Buy Credits…” in-card action.
 - Cost section includes an in-card refresh button (same behavior as menu “Refresh”) for usage + token-cost refresh.
-- Web-only rows (when OpenAI cookies are enabled): code review remaining, usage breakdown submenu.
+- OpenAI web extras: usage breakdown submenu + credits history source.
+- Code review appears only when Providers → Codex → "Show Code review usage" is enabled.
+- Spark appears only when Providers → Codex → "Show Codex Spark usage" is enabled.
+  When OAuth provides Spark windows, the card shows a `Spark` header with `Session` (5h) and `Weekly` (7d)
+  rows plus reset text.
+  Reset text follows the global reset style setting (countdown: "Resets in …" or absolute clock/time-date).
+  The Spark toggle is Pro-gated (including Spark plan identifiers such as `gpt-5.3-codex-spark`);
+  non-eligible accounts show an inactive control with an explanatory message.
 - Token accounts: optional account switcher bar or stacked account cards (up to 6) when multiple manual tokens exist.
 
 ## Preferences notes

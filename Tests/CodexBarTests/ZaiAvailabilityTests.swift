@@ -23,6 +23,12 @@ struct ZaiAvailabilityTests {
             browserDetection: BrowserDetection(cacheTTL: 0),
             settings: settings)
 
+        guard UsageProvider.allCases.contains(.zai) else {
+            #expect(store.isEnabled(.zai) == false)
+            #expect(settings.zaiAPIToken.isEmpty)
+            return
+        }
+
         let metadata = try #require(ProviderRegistry.shared.metadata[.zai])
         settings.setProviderEnabled(provider: .zai, metadata: metadata, enabled: true)
 
@@ -47,6 +53,11 @@ struct ZaiAvailabilityTests {
             settings: settings)
 
         settings.addTokenAccount(provider: .zai, label: "primary", token: "zai-token-account")
+
+        guard UsageProvider.allCases.contains(.zai) else {
+            #expect(store.isEnabled(.zai) == false)
+            return
+        }
 
         let metadata = try #require(ProviderRegistry.shared.metadata[.zai])
         settings.setProviderEnabled(provider: .zai, metadata: metadata, enabled: true)

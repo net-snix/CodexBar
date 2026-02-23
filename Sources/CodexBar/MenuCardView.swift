@@ -26,6 +26,7 @@ struct UsageMenuCardView: View {
 
         struct Metric: Identifiable {
             let id: String
+            let sectionHeader: String?
             let title: String
             let percent: Double
             let percentStyle: PercentStyle
@@ -35,6 +36,32 @@ struct UsageMenuCardView: View {
             let detailRightText: String?
             let pacePercent: Double?
             let paceOnTop: Bool
+
+            init(
+                id: String,
+                sectionHeader: String? = nil,
+                title: String,
+                percent: Double,
+                percentStyle: PercentStyle,
+                resetText: String?,
+                detailText: String?,
+                detailLeftText: String?,
+                detailRightText: String?,
+                pacePercent: Double?,
+                paceOnTop: Bool)
+            {
+                self.id = id
+                self.sectionHeader = sectionHeader
+                self.title = title
+                self.percent = percent
+                self.percentStyle = percentStyle
+                self.resetText = resetText
+                self.detailText = detailText
+                self.detailLeftText = detailLeftText
+                self.detailRightText = detailRightText
+                self.pacePercent = pacePercent
+                self.paceOnTop = paceOnTop
+            }
 
             var percentLabel: String {
                 String(format: "%.0f%% %@", self.percent, self.percentStyle.labelSuffix)
@@ -356,6 +383,11 @@ private struct MetricRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let sectionHeader = self.metric.sectionHeader {
+                Text(sectionHeader)
+                    .font(.body)
+                    .fontWeight(.semibold)
+            }
             Text(self.metric.title)
                 .font(.body)
                 .fontWeight(.medium)
@@ -633,6 +665,8 @@ extension UsageMenuCardView.Model {
         let usageBarsShowUsed: Bool
         let resetTimeDisplayStyle: ResetTimeDisplayStyle
         let tokenCostUsageEnabled: Bool
+        let showCodexCodeReviewUsage: Bool
+        let showCodexSparkUsage: Bool
         let showOptionalCreditsAndExtraUsage: Bool
         let hidePersonalInfo: Bool
         let now: Date
@@ -654,6 +688,8 @@ extension UsageMenuCardView.Model {
             usageBarsShowUsed: Bool,
             resetTimeDisplayStyle: ResetTimeDisplayStyle,
             tokenCostUsageEnabled: Bool,
+            showCodexCodeReviewUsage: Bool = false,
+            showCodexSparkUsage: Bool = true,
             showOptionalCreditsAndExtraUsage: Bool,
             hidePersonalInfo: Bool,
             now: Date,
@@ -674,6 +710,8 @@ extension UsageMenuCardView.Model {
             self.usageBarsShowUsed = usageBarsShowUsed
             self.resetTimeDisplayStyle = resetTimeDisplayStyle
             self.tokenCostUsageEnabled = tokenCostUsageEnabled
+            self.showCodexCodeReviewUsage = showCodexCodeReviewUsage
+            self.showCodexSparkUsage = showCodexSparkUsage
             self.showOptionalCreditsAndExtraUsage = showOptionalCreditsAndExtraUsage
             self.hidePersonalInfo = hidePersonalInfo
             self.now = now
@@ -897,25 +935,76 @@ extension UsageMenuCardView.Model {
                 paceOnTop: true))
         }
 
-        if input.provider == .codex, let remaining = input.dashboard?.codeReviewRemainingPercent {
+        if input.provider == .codex, input.showCodexSparkUsage {
+            let sparkFiveHourWindow = snapshot.codexExtraUsage?.sparkFiveHourWindow
+            let sparkSevenDayWindow = snapshot.codexExtraUsage?.sparkSevenDayWindow
+            if let sparkFiveHourWindow {
+                let sparkFiveHourPercent = input.usageBarsShowUsed
+                    ? sparkFiveHourWindow.usedPercent
+                    : sparkFiveHourWindow.remainingPercent
+                metrics.append(Metric(
+                    id: "spark-5h",
+                    sectionHeader: "Spark",
+                    title: "Session",
+                    percent: Self.clamped(sparkFiveHourPercent),
+                    percentStyle: percentStyle,
+                    resetText: Self.resetText(
+                        for: sparkFiveHourWindow,
+                        style: input.resetTimeDisplayStyle,
+                        now: input.now),
+                    detailText: nil,
+                    detailLeftText: nil,
+                    detailRightText: nil,
+                    pacePercent: nil,
+                    paceOnTop: true))
+            }
+            if let sparkSevenDayWindow {
+                let sparkSevenDayPercent = input.usageBarsShowUsed
+                    ? sparkSevenDayWindow.usedPercent
+                    : sparkSevenDayWindow.remainingPercent
+                metrics.append(Metric(
+                    id: "spark-7d",
+                    title: "Weekly",
+                    percent: Self.clamped(sparkSevenDayPercent),
+                    percentStyle: percentStyle,
+                    resetText: Self.resetText(
+                        for: sparkSevenDayWindow,
+                        style: input.resetTimeDisplayStyle,
+                        now: input.now),
+                    detailText: nil,
+                    detailLeftText: nil,
+                    detailRightText: nil,
+                    pacePercent: nil,
+                    paceOnTop: true))
+            }
+            if sparkFiveHourWindow == nil, sparkSevenDayWindow == nil {
+                let sparkRemaining = input.dashboard?.sparkRemainingPercent
+                    ?? snapshot.codexExtraUsage?.sparkRemainingPercent
+                if let remaining = sparkRemaining {
+                    let percent = input.usageBarsShowUsed ? (100 - remaining) : remaining
+                    metrics.append(Metric(
+                        id: "spark",
+                        sectionHeader: "Spark",
+                        title: "Session",
+                        percent: Self.clamped(percent),
+                        percentStyle: percentStyle,
+                        resetText: nil,
+                        detailText: nil,
+                        detailLeftText: nil,
+                        detailRightText: nil,
+                        pacePercent: nil,
+                        paceOnTop: true))
+                }
+            }
+        }
+
+        let codeReviewRemaining = input.dashboard?.codeReviewRemainingPercent
+            ?? snapshot.codexExtraUsage?.codeReviewRemainingPercent
+        if input.provider == .codex, input.showCodexCodeReviewUsage, let remaining = codeReviewRemaining {
             let percent = input.usageBarsShowUsed ? (100 - remaining) : remaining
             metrics.append(Metric(
                 id: "code-review",
                 title: "Code review",
-                percent: Self.clamped(percent),
-                percentStyle: percentStyle,
-                resetText: nil,
-                detailText: nil,
-                detailLeftText: nil,
-                detailRightText: nil,
-                pacePercent: nil,
-                paceOnTop: true))
-        }
-        if input.provider == .codex, let remaining = input.dashboard?.sparkRemainingPercent {
-            let percent = input.usageBarsShowUsed ? (100 - remaining) : remaining
-            metrics.append(Metric(
-                id: "spark",
-                title: "Spark",
                 percent: Self.clamped(percent),
                 percentStyle: percentStyle,
                 resetText: nil,

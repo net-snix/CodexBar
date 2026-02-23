@@ -42,7 +42,8 @@ extension CodexBarCLI {
                 // Cost usage is local-only; it does not require web/CLI provider fetches.
                 let snapshot = try await fetcher.loadTokenSnapshot(
                     provider: provider,
-                    forceRefresh: forceRefresh)
+                    forceRefresh: forceRefresh,
+                    forceRescan: forceRefresh)
                 switch format {
                 case .text:
                     sections.append(Self.renderCostText(provider: provider, snapshot: snapshot, useColor: useColor))

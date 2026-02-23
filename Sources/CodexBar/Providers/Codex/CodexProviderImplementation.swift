@@ -20,6 +20,8 @@ struct CodexProviderImplementation: ProviderImplementation {
         _ = settings.codexUsageDataSource
         _ = settings.codexCookieSource
         _ = settings.codexCookieHeader
+        _ = settings.codexCodeReviewUsageEnabled
+        _ = settings.codexSparkUsageEnabled
     }
 
     @MainActor
@@ -59,6 +61,9 @@ struct CodexProviderImplementation: ProviderImplementation {
 
     @MainActor
     func settingsToggles(context: ProviderSettingsContext) -> [ProviderSettingsToggleDescriptor] {
+        let isProSubscriber: () -> Bool = {
+            context.store.isCodexProSubscriber()
+        }
         let extrasBinding = Binding(
             get: { context.settings.openAIWebAccessEnabled },
             set: { enabled in
@@ -69,16 +74,59 @@ struct CodexProviderImplementation: ProviderImplementation {
                         for: .codex)
                 }
             })
+        let sparkBinding = Binding(
+            get: {
+                guard isProSubscriber() else { return false }
+                return context.settings.codexSparkUsageEnabled
+            },
+            set: { enabled in
+                guard isProSubscriber() else {
+                    context.settings.codexSparkUsageEnabled = false
+                    return
+                }
+                context.settings.codexSparkUsageEnabled = enabled
+            })
+        let codeReviewBinding = Binding(
+            get: { context.settings.codexCodeReviewUsageEnabled },
+            set: { enabled in
+                context.settings.codexCodeReviewUsageEnabled = enabled
+            })
 
         return [
             ProviderSettingsToggleDescriptor(
                 id: "codex-openai-web-extras",
                 title: "OpenAI web extras",
-                subtitle: "Show usage breakdown, credits history, and code review via chatgpt.com.",
+                subtitle: "Show usage breakdown and credits history via chatgpt.com.",
                 binding: extrasBinding,
                 statusText: nil,
                 actions: [],
                 isVisible: nil,
+                onChange: nil,
+                onAppDidBecomeActive: nil,
+                onAppearWhenEnabled: nil),
+            ProviderSettingsToggleDescriptor(
+                id: "codex-code-review-usage",
+                title: "Show Code review usage",
+                subtitle: "Show Code review remaining in the menu.",
+                binding: codeReviewBinding,
+                statusText: nil,
+                actions: [],
+                isVisible: nil,
+                onChange: nil,
+                onAppDidBecomeActive: nil,
+                onAppearWhenEnabled: nil),
+            ProviderSettingsToggleDescriptor(
+                id: "codex-spark-usage",
+                title: "Show Codex Spark usage",
+                subtitle: "Show Codex Spark 5h and 7d usage in the menu.",
+                binding: sparkBinding,
+                statusText: {
+                    guard !isProSubscriber() else { return nil }
+                    return "User is not subscribed to Pro."
+                },
+                actions: [],
+                isVisible: nil,
+                isEnabled: { isProSubscriber() },
                 onChange: nil,
                 onAppDidBecomeActive: nil,
                 onAppearWhenEnabled: nil),

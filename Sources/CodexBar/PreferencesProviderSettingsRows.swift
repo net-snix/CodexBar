@@ -38,6 +38,7 @@ struct ProviderSettingsToggleRowView: View {
     let toggle: ProviderSettingsToggleDescriptor
 
     var body: some View {
+        let isEnabled = self.toggle.isEnabled?() ?? true
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -52,9 +53,10 @@ struct ProviderSettingsToggleRowView: View {
                 Toggle("", isOn: self.toggle.binding)
                     .labelsHidden()
                     .toggleStyle(.switch)
+                    .disabled(!isEnabled)
             }
 
-            if self.toggle.binding.wrappedValue {
+            if self.toggle.binding.wrappedValue || !isEnabled {
                 if let status = self.toggle.statusText?(), !status.isEmpty {
                     Text(status)
                         .font(.footnote)
@@ -63,7 +65,7 @@ struct ProviderSettingsToggleRowView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                let actions = self.toggle.actions.filter { $0.isVisible?() ?? true }
+                let actions = isEnabled ? self.toggle.actions.filter { $0.isVisible?() ?? true } : []
                 if !actions.isEmpty {
                     HStack(spacing: 10) {
                         ForEach(actions) { action in
@@ -80,12 +82,14 @@ struct ProviderSettingsToggleRowView: View {
             }
         }
         .onChange(of: self.toggle.binding.wrappedValue) { _, enabled in
+            guard isEnabled else { return }
             guard let onChange = self.toggle.onChange else { return }
             Task { @MainActor in
                 await onChange(enabled)
             }
         }
         .task(id: self.toggle.binding.wrappedValue) {
+            guard isEnabled else { return }
             guard self.toggle.binding.wrappedValue else { return }
             guard let onAppear = self.toggle.onAppearWhenEnabled else { return }
             await onAppear()

@@ -343,6 +343,8 @@ struct ProvidersPane: View {
             usageBarsShowUsed: self.settings.usageBarsShowUsed,
             resetTimeDisplayStyle: self.settings.resetTimeDisplayStyle,
             tokenCostUsageEnabled: self.settings.isCostUsageEffectivelyEnabled(for: provider),
+            showCodexCodeReviewUsage: self.settings.codexCodeReviewUsageEnabled,
+            showCodexSparkUsage: self.settings.codexSparkUsageEnabled && self.store.isCodexProSubscriber(),
             showOptionalCreditsAndExtraUsage: self.settings.showOptionalCreditsAndExtraUsage,
             hidePersonalInfo: self.settings.hidePersonalInfo,
             now: Date(),

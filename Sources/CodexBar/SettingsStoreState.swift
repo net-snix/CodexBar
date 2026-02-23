@@ -26,6 +26,8 @@ struct SettingsDefaultsState: Sendable {
     var claudeWebExtrasEnabledRaw: Bool
     var showOptionalCreditsAndExtraUsage: Bool
     var openAIWebAccessEnabled: Bool
+    var codexCodeReviewUsageEnabled: Bool
+    var codexSparkUsageEnabled: Bool
     var jetbrainsIDEBasePath: String
     var mergeIcons: Bool
     var switcherShowsIcons: Bool

@@ -46,6 +46,7 @@ public struct CostUsageFetcher: Sendable {
         provider: UsageProvider,
         now: Date = Date(),
         forceRefresh: Bool = false,
+        forceRescan: Bool = false,
         allowVertexClaudeFallback: Bool = false) async throws -> CostUsageTokenSnapshot
     {
         guard provider == .codex || provider == .claude || provider == .vertexai else {
@@ -64,8 +65,8 @@ public struct CostUsageFetcher: Sendable {
         }
         if forceRefresh {
             options.refreshMinIntervalSeconds = 0
-            options.forceRescan = true
         }
+        options.forceRescan = forceRescan
         let primaryFilter = Self.effectiveClaudeLogProviderFilter(
             provider: provider,
             requested: options.claudeLogProviderFilter)

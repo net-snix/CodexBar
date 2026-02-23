@@ -121,6 +121,7 @@ extension SettingsStore {
     }
 
     private func applyTokenAccountCookieSourceIfNeeded(provider: UsageProvider) {
+        guard UsageProvider.allCases.contains(provider) else { return }
         guard let support = TokenAccountSupportCatalog.support(for: provider),
               support.requiresManualCookieSource
         else { return }

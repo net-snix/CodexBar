@@ -116,6 +116,7 @@ struct MenuCardModelTests {
             usageBarsShowUsed: true,
             resetTimeDisplayStyle: .countdown,
             tokenCostUsageEnabled: false,
+            showCodexCodeReviewUsage: true,
             showOptionalCreditsAndExtraUsage: true,
             hidePersonalInfo: false,
             now: now))
@@ -166,11 +167,60 @@ struct MenuCardModelTests {
             usageBarsShowUsed: false,
             resetTimeDisplayStyle: .countdown,
             tokenCostUsageEnabled: false,
+            showCodexCodeReviewUsage: true,
             showOptionalCreditsAndExtraUsage: true,
             hidePersonalInfo: false,
             now: now))
 
         #expect(model.metrics.contains { $0.title == "Code review" && $0.percent == 73 })
+    }
+
+    @Test
+    func hidesCodeReviewMetricWhenToggleDisabled() throws {
+        let now = Date()
+        let identity = ProviderIdentitySnapshot(
+            providerID: .codex,
+            accountEmail: "codex@example.com",
+            accountOrganization: nil,
+            loginMethod: nil)
+        let snapshot = UsageSnapshot(
+            primary: RateWindow(usedPercent: 0, windowMinutes: 300, resetsAt: nil, resetDescription: nil),
+            secondary: nil,
+            tertiary: nil,
+            updatedAt: now,
+            identity: identity)
+        let metadata = try #require(ProviderDefaults.metadata[.codex])
+
+        let dashboard = OpenAIDashboardSnapshot(
+            signedInEmail: "codex@example.com",
+            codeReviewRemainingPercent: 73,
+            creditEvents: [],
+            dailyBreakdown: [],
+            usageBreakdown: [],
+            creditsPurchaseURL: nil,
+            updatedAt: now)
+        let model = UsageMenuCardView.Model.make(.init(
+            provider: .codex,
+            metadata: metadata,
+            snapshot: snapshot,
+            credits: nil,
+            creditsError: nil,
+            dashboard: dashboard,
+            dashboardError: nil,
+            tokenSnapshot: nil,
+            tokenError: nil,
+            account: AccountInfo(email: "codex@example.com", plan: nil),
+            isRefreshing: false,
+            lastError: nil,
+            usageBarsShowUsed: false,
+            resetTimeDisplayStyle: .countdown,
+            tokenCostUsageEnabled: false,
+            showCodexCodeReviewUsage: false,
+            showOptionalCreditsAndExtraUsage: true,
+            hidePersonalInfo: false,
+            now: now))
+
+        #expect(model.metrics.contains { $0.title == "Code review" } == false)
     }
 
     @Test
@@ -218,16 +268,193 @@ struct MenuCardModelTests {
             usageBarsShowUsed: false,
             resetTimeDisplayStyle: .countdown,
             tokenCostUsageEnabled: false,
+            showCodexCodeReviewUsage: true,
             showOptionalCreditsAndExtraUsage: true,
             hidePersonalInfo: false,
             now: now))
 
-        let codeReviewIndex = model.metrics.firstIndex { $0.title == "Code review" }
-        let sparkIndex = model.metrics.firstIndex { $0.title == "Spark" }
-        #expect(codeReviewIndex != nil)
-        #expect(sparkIndex != nil)
-        #expect(codeReviewIndex! + 1 == sparkIndex)
-        #expect(model.metrics[sparkIndex!].percent == 41)
+        _ = try #require(model.metrics.firstIndex { $0.title == "Code review" })
+        let sparkIndex = try #require(model.metrics.firstIndex { $0.id == "spark" })
+        #expect(model.metrics[sparkIndex].sectionHeader == "Spark")
+        #expect(model.metrics[sparkIndex].title == "Session")
+        #expect(model.metrics[sparkIndex].percent == 41)
+    }
+
+    @Test
+    func hidesSparkMetricWhenSparkUsageToggleIsDisabled() throws {
+        let now = Date()
+        let identity = ProviderIdentitySnapshot(
+            providerID: .codex,
+            accountEmail: "codex@example.com",
+            accountOrganization: nil,
+            loginMethod: nil)
+        let snapshot = UsageSnapshot(
+            primary: RateWindow(
+                usedPercent: 0,
+                windowMinutes: 300,
+                resetsAt: nil,
+                resetDescription: nil),
+            secondary: nil,
+            tertiary: nil,
+            updatedAt: now,
+            identity: identity)
+        let metadata = try #require(ProviderDefaults.metadata[.codex])
+
+        let dashboard = OpenAIDashboardSnapshot(
+            signedInEmail: "codex@example.com",
+            codeReviewRemainingPercent: 73,
+            sparkRemainingPercent: 41,
+            creditEvents: [],
+            dailyBreakdown: [],
+            usageBreakdown: [],
+            creditsPurchaseURL: nil,
+            updatedAt: now)
+        let model = UsageMenuCardView.Model.make(.init(
+            provider: .codex,
+            metadata: metadata,
+            snapshot: snapshot,
+            credits: nil,
+            creditsError: nil,
+            dashboard: dashboard,
+            dashboardError: nil,
+            tokenSnapshot: nil,
+            tokenError: nil,
+            account: AccountInfo(email: "codex@example.com", plan: nil),
+            isRefreshing: false,
+            lastError: nil,
+            usageBarsShowUsed: false,
+            resetTimeDisplayStyle: .countdown,
+            tokenCostUsageEnabled: false,
+            showCodexCodeReviewUsage: true,
+            showCodexSparkUsage: false,
+            showOptionalCreditsAndExtraUsage: true,
+            hidePersonalInfo: false,
+            now: now))
+
+        #expect(model.metrics.contains { $0.title == "Code review" && $0.percent == 73 })
+        #expect(model.metrics.contains { $0.id == "spark" } == false)
+    }
+
+    @Test
+    func showsSparkWindowMetricsFromCodexOAuthUsageWhenDashboardMissing() throws {
+        let now = Date()
+        let identity = ProviderIdentitySnapshot(
+            providerID: .codex,
+            accountEmail: "codex@example.com",
+            accountOrganization: nil,
+            loginMethod: "Pro")
+        let snapshot = UsageSnapshot(
+            primary: RateWindow(
+                usedPercent: 0,
+                windowMinutes: 300,
+                resetsAt: nil,
+                resetDescription: nil),
+            secondary: nil,
+            tertiary: nil,
+            codexExtraUsage: CodexExtraUsageSnapshot(
+                codeReviewRemainingPercent: 87,
+                sparkRemainingPercent: 64,
+                sparkFiveHourWindow: RateWindow(
+                    usedPercent: 36,
+                    windowMinutes: 300,
+                    resetsAt: now.addingTimeInterval(2 * 3600),
+                    resetDescription: nil),
+                sparkSevenDayWindow: RateWindow(
+                    usedPercent: 44,
+                    windowMinutes: 10080,
+                    resetsAt: now.addingTimeInterval(2 * 24 * 3600),
+                    resetDescription: nil)),
+            updatedAt: now,
+            identity: identity)
+        let metadata = try #require(ProviderDefaults.metadata[.codex])
+        let model = UsageMenuCardView.Model.make(.init(
+            provider: .codex,
+            metadata: metadata,
+            snapshot: snapshot,
+            credits: nil,
+            creditsError: nil,
+            dashboard: nil,
+            dashboardError: nil,
+            tokenSnapshot: nil,
+            tokenError: nil,
+            account: AccountInfo(email: "codex@example.com", plan: nil),
+            isRefreshing: false,
+            lastError: nil,
+            usageBarsShowUsed: false,
+            resetTimeDisplayStyle: .countdown,
+            tokenCostUsageEnabled: false,
+            showCodexCodeReviewUsage: false,
+            showCodexSparkUsage: true,
+            showOptionalCreditsAndExtraUsage: true,
+            hidePersonalInfo: false,
+            now: now))
+
+        #expect(model.metrics.contains { $0.id == "spark-5h" && $0.title == "Session" && $0.sectionHeader == "Spark" })
+        #expect(model.metrics.contains { $0.id == "spark-7d" && $0.title == "Weekly" && $0.sectionHeader == nil })
+        #expect(model.metrics.contains { $0.id == "spark-5h" && $0.percent == 64 })
+        #expect(model.metrics.contains { $0.id == "spark-7d" && $0.percent == 56 })
+        #expect(model.metrics.contains { $0.id == "spark-5h" && ($0.resetText?.contains("Resets in") == true) })
+        #expect(model.metrics.contains { $0.id == "spark-7d" && ($0.resetText?.contains("Resets in") == true) })
+        #expect(model.metrics.contains { $0.title == "Code review" } == false)
+    }
+
+    @Test
+    func sparkWindowMetricsSupportAbsoluteResetStyle() throws {
+        let now = Date()
+        let identity = ProviderIdentitySnapshot(
+            providerID: .codex,
+            accountEmail: "codex@example.com",
+            accountOrganization: nil,
+            loginMethod: "Pro")
+        let snapshot = UsageSnapshot(
+            primary: RateWindow(
+                usedPercent: 0,
+                windowMinutes: 300,
+                resetsAt: nil,
+                resetDescription: nil),
+            secondary: nil,
+            tertiary: nil,
+            codexExtraUsage: CodexExtraUsageSnapshot(
+                codeReviewRemainingPercent: nil,
+                sparkRemainingPercent: nil,
+                sparkFiveHourWindow: RateWindow(
+                    usedPercent: 12,
+                    windowMinutes: 300,
+                    resetsAt: now.addingTimeInterval(3 * 3600),
+                    resetDescription: nil),
+                sparkSevenDayWindow: RateWindow(
+                    usedPercent: 8,
+                    windowMinutes: 10080,
+                    resetsAt: now.addingTimeInterval(36 * 3600),
+                    resetDescription: nil)),
+            updatedAt: now,
+            identity: identity)
+        let metadata = try #require(ProviderDefaults.metadata[.codex])
+        let model = UsageMenuCardView.Model.make(.init(
+            provider: .codex,
+            metadata: metadata,
+            snapshot: snapshot,
+            credits: nil,
+            creditsError: nil,
+            dashboard: nil,
+            dashboardError: nil,
+            tokenSnapshot: nil,
+            tokenError: nil,
+            account: AccountInfo(email: "codex@example.com", plan: nil),
+            isRefreshing: false,
+            lastError: nil,
+            usageBarsShowUsed: false,
+            resetTimeDisplayStyle: .absolute,
+            tokenCostUsageEnabled: false,
+            showCodexCodeReviewUsage: false,
+            showCodexSparkUsage: true,
+            showOptionalCreditsAndExtraUsage: true,
+            hidePersonalInfo: false,
+            now: now))
+
+        #expect(model.metrics.contains { $0.id == "spark-5h" && ($0.resetText?.hasPrefix("Resets ") == true) })
+        #expect(model.metrics.contains { $0.id == "spark-5h" && ($0.resetText?.contains("Resets in") == false) })
+        #expect(model.metrics.contains { $0.id == "spark-7d" && ($0.resetText?.hasPrefix("Resets ") == true) })
     }
 
     @Test

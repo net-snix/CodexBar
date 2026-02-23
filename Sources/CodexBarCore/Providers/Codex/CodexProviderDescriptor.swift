@@ -180,6 +180,7 @@ struct CodexOAuthFetchStrategy: ProviderFetchStrategy {
     private static func mapUsage(_ response: CodexUsageResponse, credentials: CodexOAuthCredentials) -> UsageSnapshot {
         let primary = Self.makeWindow(response.rateLimit?.primaryWindow)
         let secondary = Self.makeWindow(response.rateLimit?.secondaryWindow)
+        let codexExtraUsage = Self.mapCodexExtraUsage(response)
 
         let identity = ProviderIdentitySnapshot(
             providerID: .codex,
@@ -191,6 +192,7 @@ struct CodexOAuthFetchStrategy: ProviderFetchStrategy {
             primary: primary ?? RateWindow(usedPercent: 0, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
             secondary: secondary,
             tertiary: nil,
+            codexExtraUsage: codexExtraUsage,
             updatedAt: Date(),
             identity: identity)
     }
@@ -209,6 +211,47 @@ struct CodexOAuthFetchStrategy: ProviderFetchStrategy {
             windowMinutes: window.limitWindowSeconds / 60,
             resetsAt: resetDate,
             resetDescription: resetDescription)
+    }
+
+    private static func mapCodexExtraUsage(_ response: CodexUsageResponse) -> CodexExtraUsageSnapshot? {
+        let codeReviewRemaining = Self.remainingPercent(rateLimit: response.codeReviewRateLimit)
+        let sparkRateLimit = response.additionalRateLimits?
+            .first(where: Self.isSparkRateLimit)?
+            .rateLimit
+        let sparkRemaining = Self.remainingPercent(rateLimit: sparkRateLimit)
+        let sparkFiveHourWindow = Self.makeWindow(sparkRateLimit?.primaryWindow)
+        let sparkSevenDayWindow = Self.makeWindow(sparkRateLimit?.secondaryWindow)
+        if codeReviewRemaining == nil,
+           sparkRemaining == nil,
+           sparkFiveHourWindow == nil,
+           sparkSevenDayWindow == nil
+        { return nil }
+        return CodexExtraUsageSnapshot(
+            codeReviewRemainingPercent: codeReviewRemaining,
+            sparkRemainingPercent: sparkRemaining,
+            sparkFiveHourWindow: sparkFiveHourWindow,
+            sparkSevenDayWindow: sparkSevenDayWindow)
+    }
+
+    private static func isSparkRateLimit(_ limit: CodexUsageResponse.AdditionalRateLimit) -> Bool {
+        let limitName = limit.limitName?.lowercased() ?? ""
+        let meteredFeature = limit.meteredFeature?.lowercased() ?? ""
+        if limitName.contains("spark") { return true }
+        if meteredFeature.contains("spark") { return true }
+        if meteredFeature.contains("bengalfox") { return true }
+        return false
+    }
+
+    private static func remainingPercent(rateLimit: CodexUsageResponse.RateLimitDetails?) -> Double? {
+        guard let rateLimit else { return nil }
+        var remainingValues: [Double] = []
+        if let primary = rateLimit.primaryWindow {
+            remainingValues.append(max(0, min(100, 100 - Double(primary.usedPercent))))
+        }
+        if let secondary = rateLimit.secondaryWindow {
+            remainingValues.append(max(0, min(100, 100 - Double(secondary.usedPercent))))
+        }
+        return remainingValues.min()
     }
 
     private static func resolveAccountEmail(from credentials: CodexOAuthCredentials) -> String? {

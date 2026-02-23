@@ -254,6 +254,22 @@ extension SettingsStore {
         }
     }
 
+    var codexCodeReviewUsageEnabled: Bool {
+        get { self.defaultsState.codexCodeReviewUsageEnabled }
+        set {
+            self.defaultsState.codexCodeReviewUsageEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "codexCodeReviewUsageEnabled")
+        }
+    }
+
+    var codexSparkUsageEnabled: Bool {
+        get { self.defaultsState.codexSparkUsageEnabled }
+        set {
+            self.defaultsState.codexSparkUsageEnabled = newValue
+            self.userDefaults.set(newValue, forKey: "codexSparkUsageEnabled")
+        }
+    }
+
     var jetbrainsIDEBasePath: String {
         get { self.defaultsState.jetbrainsIDEBasePath }
         set {

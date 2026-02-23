@@ -252,6 +252,42 @@ struct SettingsStoreTests {
     }
 
     @Test
+    func defaultsCodexSparkUsageToEnabled() throws {
+        let suite = "SettingsStoreTests-codex-spark-usage"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(false, forKey: "debugDisableKeychainAccess")
+        let configStore = testConfigStore(suiteName: suite)
+
+        let store = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+
+        #expect(store.codexSparkUsageEnabled == true)
+        #expect(defaults.bool(forKey: "codexSparkUsageEnabled") == true)
+    }
+
+    @Test
+    func defaultsCodexCodeReviewUsageToDisabled() throws {
+        let suite = "SettingsStoreTests-codex-code-review-usage"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(false, forKey: "debugDisableKeychainAccess")
+        let configStore = testConfigStore(suiteName: suite)
+
+        let store = SettingsStore(
+            userDefaults: defaults,
+            configStore: configStore,
+            zaiTokenStore: NoopZaiTokenStore(),
+            syntheticTokenStore: NoopSyntheticTokenStore())
+
+        #expect(store.codexCodeReviewUsageEnabled == false)
+        #expect(defaults.bool(forKey: "codexCodeReviewUsageEnabled") == false)
+    }
+
+    @Test
     func menuObservationTokenUpdatesOnDefaultsChange() async throws {
         let suite = "SettingsStoreTests-observation-defaults"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -345,33 +381,9 @@ struct SettingsStoreTests {
             zaiTokenStore: NoopZaiTokenStore(),
             syntheticTokenStore: NoopSyntheticTokenStore())
 
-        #expect(storeA.orderedProviders() == [
-            .gemini,
-            .codex,
-            .claude,
-            .cursor,
-            .opencode,
-            .factory,
-            .antigravity,
-            .copilot,
-            .zai,
-            .minimax,
-            .kimi,
-            .kiro,
-            .vertexai,
-            .augment,
-            .jetbrains,
-            .kimik2,
-            .amp,
-            .ollama,
-            .synthetic,
-            .warp,
-            .openrouter,
-        ])
-
-        // Move one provider; ensure it's persisted across instances.
-        let antigravityIndex = try #require(storeA.orderedProviders().firstIndex(of: .antigravity))
-        storeA.moveProvider(fromOffsets: IndexSet(integer: antigravityIndex), toOffset: 0)
+        #expect(storeA.orderedProviders() == UsageProvider.allCases)
+        let firstIndex = try #require(storeA.orderedProviders().firstIndex(of: .codex))
+        storeA.moveProvider(fromOffsets: IndexSet(integer: firstIndex), toOffset: 0)
 
         let defaultsB = try #require(UserDefaults(suiteName: suite))
         let storeB = SettingsStore(
@@ -380,6 +392,6 @@ struct SettingsStoreTests {
             zaiTokenStore: NoopZaiTokenStore(),
             syntheticTokenStore: NoopSyntheticTokenStore())
 
-        #expect(storeB.orderedProviders().first == .antigravity)
+        #expect(storeB.orderedProviders() == UsageProvider.allCases)
     }
 }

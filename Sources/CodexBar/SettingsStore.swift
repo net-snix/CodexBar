@@ -212,6 +212,12 @@ extension SettingsStore {
         let openAIWebAccessDefault = userDefaults.object(forKey: "openAIWebAccessEnabled") as? Bool
         let openAIWebAccessEnabled = openAIWebAccessDefault ?? true
         if openAIWebAccessDefault == nil { userDefaults.set(true, forKey: "openAIWebAccessEnabled") }
+        let codexCodeReviewUsageDefault = userDefaults.object(forKey: "codexCodeReviewUsageEnabled") as? Bool
+        let codexCodeReviewUsageEnabled = codexCodeReviewUsageDefault ?? false
+        if codexCodeReviewUsageDefault == nil { userDefaults.set(false, forKey: "codexCodeReviewUsageEnabled") }
+        let codexSparkUsageDefault = userDefaults.object(forKey: "codexSparkUsageEnabled") as? Bool
+        let codexSparkUsageEnabled = codexSparkUsageDefault ?? true
+        if codexSparkUsageDefault == nil { userDefaults.set(true, forKey: "codexSparkUsageEnabled") }
         let jetbrainsIDEBasePath = userDefaults.string(forKey: "jetbrainsIDEBasePath") ?? ""
         let mergeIcons = userDefaults.object(forKey: "mergeIcons") as? Bool ?? true
         let switcherShowsIcons = userDefaults.object(forKey: "switcherShowsIcons") as? Bool ?? true
@@ -244,6 +250,8 @@ extension SettingsStore {
             claudeWebExtrasEnabledRaw: claudeWebExtrasEnabledRaw,
             showOptionalCreditsAndExtraUsage: showOptionalCreditsAndExtraUsage,
             openAIWebAccessEnabled: openAIWebAccessEnabled,
+            codexCodeReviewUsageEnabled: codexCodeReviewUsageEnabled,
+            codexSparkUsageEnabled: codexSparkUsageEnabled,
             jetbrainsIDEBasePath: jetbrainsIDEBasePath,
             mergeIcons: mergeIcons,
             switcherShowsIcons: switcherShowsIcons,

@@ -11,10 +11,16 @@ struct UsageStoreCoverageTests {
         let settings = Self.makeSettingsStore(suite: "UsageStoreCoverageTests-highest")
         let store = Self.makeUsageStore(settings: settings)
         let metadata = ProviderRegistry.shared.metadata
+        let supportsFactory = UsageProvider.allCases.contains(.factory)
+        let supportsClaude = UsageProvider.allCases.contains(.claude)
 
         try settings.setProviderEnabled(provider: .codex, metadata: #require(metadata[.codex]), enabled: true)
-        try settings.setProviderEnabled(provider: .factory, metadata: #require(metadata[.factory]), enabled: true)
-        try settings.setProviderEnabled(provider: .claude, metadata: #require(metadata[.claude]), enabled: true)
+        if supportsFactory {
+            try settings.setProviderEnabled(provider: .factory, metadata: #require(metadata[.factory]), enabled: true)
+        }
+        if supportsClaude {
+            try settings.setProviderEnabled(provider: .claude, metadata: #require(metadata[.claude]), enabled: true)
+        }
 
         let now = Date()
         store._setSnapshotForTesting(
@@ -23,26 +29,43 @@ struct UsageStoreCoverageTests {
                 secondary: nil,
                 updatedAt: now),
             provider: .codex)
-        store._setSnapshotForTesting(
-            UsageSnapshot(
-                primary: RateWindow(usedPercent: 10, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
-                secondary: RateWindow(usedPercent: 70, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
-                updatedAt: now),
-            provider: .factory)
-        store._setSnapshotForTesting(
-            UsageSnapshot(
-                primary: RateWindow(usedPercent: 100, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
-                secondary: nil,
-                updatedAt: now),
-            provider: .claude)
+        if supportsFactory {
+            store._setSnapshotForTesting(
+                UsageSnapshot(
+                    primary: RateWindow(usedPercent: 10, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                    secondary: RateWindow(usedPercent: 70, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                    updatedAt: now),
+                provider: .factory)
+        }
+        if supportsClaude {
+            store._setSnapshotForTesting(
+                UsageSnapshot(
+                    primary: RateWindow(usedPercent: 100, windowMinutes: nil, resetsAt: nil, resetDescription: nil),
+                    secondary: nil,
+                    updatedAt: now),
+                provider: .claude)
+        }
 
         let highest = store.providerWithHighestUsage()
-        #expect(highest?.provider == .factory)
-        #expect(highest?.usedPercent == 70)
-        #expect(store.iconStyle == .combined)
-
-        try settings.setProviderEnabled(provider: .factory, metadata: #require(metadata[.factory]), enabled: false)
-        try settings.setProviderEnabled(provider: .claude, metadata: #require(metadata[.claude]), enabled: false)
+        if supportsFactory {
+            #expect(highest?.provider == .factory)
+            #expect(highest?.usedPercent == 70)
+            #expect(store.iconStyle == .combined)
+            try settings.setProviderEnabled(
+                provider: .factory,
+                metadata: #require(metadata[.factory]),
+                enabled: false)
+            if supportsClaude {
+                try settings.setProviderEnabled(
+                    provider: .claude,
+                    metadata: #require(metadata[.claude]),
+                    enabled: false)
+            }
+        } else {
+            #expect(highest?.provider == .codex)
+            #expect(highest?.usedPercent == 50)
+            #expect(store.iconStyle == .codex)
+        }
         #expect(store.iconStyle == store.style(for: .codex))
 
         store._setErrorForTesting("error", provider: .codex)

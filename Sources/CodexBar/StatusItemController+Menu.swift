@@ -553,10 +553,15 @@ extension StatusItemController {
     }
 
     private func scheduleOpenMenuRefresh(for menu: NSMenu) {
-        // Kick off a user-initiated refresh on open (non-forced) and re-check after a delay.
-        // NEVER block menu opening with network requests.
+        // Opening the menu should not force a refresh every time.
+        // Only refresh on open when data is stale or missing.
         if !self.store.isRefreshing {
-            self.refreshStore(forceTokenUsage: false)
+            let provider = self.menuProvider(for: menu) ?? self.resolvedMenuProvider()
+            let isStale = provider.map { self.store.isStale(provider: $0) } ?? self.store.isStale
+            let hasSnapshot = provider.map { self.store.snapshot(for: $0) != nil } ?? true
+            if isStale || !hasSnapshot {
+                self.refreshStore(forceTokenUsage: false)
+            }
         }
         let key = ObjectIdentifier(menu)
         self.menuRefreshTasks[key]?.cancel()
@@ -1248,6 +1253,8 @@ extension StatusItemController {
             usageBarsShowUsed: self.settings.usageBarsShowUsed,
             resetTimeDisplayStyle: self.settings.resetTimeDisplayStyle,
             tokenCostUsageEnabled: self.settings.isCostUsageEffectivelyEnabled(for: target),
+            showCodexCodeReviewUsage: self.settings.codexCodeReviewUsageEnabled,
+            showCodexSparkUsage: self.settings.codexSparkUsageEnabled && self.store.isCodexProSubscriber(),
             showOptionalCreditsAndExtraUsage: self.settings.showOptionalCreditsAndExtraUsage,
             hidePersonalInfo: self.settings.hidePersonalInfo,
             now: Date(),

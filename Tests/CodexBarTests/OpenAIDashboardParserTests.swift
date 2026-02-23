@@ -46,6 +46,24 @@ struct OpenAIDashboardParserTests {
     }
 
     @Test
+    func parsesSparkRemainingPercent_whenModelVersionAppearsBetweenLabelAndPercent() {
+        let body = "Balance\nCodex Spark 5.3\n42% remaining\nWeekly usage limit\n"
+        #expect(OpenAIDashboardParser.parseSparkRemainingPercent(bodyText: body) == 42)
+    }
+
+    @Test
+    func parsesSparkRemainingPercent_whenHyphenatedModelLabelAppears() {
+        let body = "Balance\ngpt-5.3-codex-spark usage\n42% remaining\nWeekly usage limit\n"
+        #expect(OpenAIDashboardParser.parseSparkRemainingPercent(bodyText: body) == 42)
+    }
+
+    @Test
+    func parsesSparkRemainingPercent_convertsUsedPercentToRemaining() {
+        let body = "Balance\ngpt-5.3-codex-spark usage 58% used\nWeekly usage limit\n"
+        #expect(OpenAIDashboardParser.parseSparkRemainingPercent(bodyText: body) == 42)
+    }
+
+    @Test
     func parsesCreditsRemaining() {
         let body = "Balance\nCredits remaining 1,234.56\nUsage"
         let value = OpenAIDashboardParser.parseCreditsRemaining(bodyText: body)
