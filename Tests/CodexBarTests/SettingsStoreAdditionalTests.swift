@@ -72,6 +72,7 @@ struct SettingsStoreAdditionalTests {
     private static func makeSettingsStore(suite: String) -> SettingsStore {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
+        defaults.set(false, forKey: "debugDisableKeychainAccess")
         let configStore = testConfigStore(suiteName: suite)
 
         return SettingsStore(
