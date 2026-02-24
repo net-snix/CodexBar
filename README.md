@@ -4,7 +4,7 @@ CodexBar is a macOS menu bar app for Codex usage visibility.
 
 This fork (`net-snix/CodexBar`) is intentionally Codex-only in active runtime behavior, with a performance and battery focus.
 
-<img src="codexbar.png" alt="CodexBar menu screenshot" width="520" />
+<img width="664" height="1344" alt="CleanShot 2026-02-24 at 11 17 53@2x" src="https://github.com/user-attachments/assets/f486ddd2-e3d7-49b0-9973-70f4b951ebf6" />
 
 ## Project status
 
