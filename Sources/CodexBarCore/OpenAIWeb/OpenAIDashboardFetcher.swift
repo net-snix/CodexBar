@@ -92,9 +92,21 @@ public struct OpenAIDashboardFetcher {
     {
         let lease = try await self.makeWebView(websiteDataStore: websiteDataStore, logger: logger)
         defer { lease.release() }
-        let webView = lease.webView
-        let log = lease.log
+        return try await self.pollLatestDashboard(
+            webView: lease.webView,
+            log: lease.log,
+            debugDumpHTML: debugDumpHTML,
+            requirePrimaryUsageLimit: requirePrimaryUsageLimit,
+            timeout: timeout)
+    }
 
+    private func pollLatestDashboard(
+        webView: WKWebView,
+        log: (String) -> Void,
+        debugDumpHTML: Bool,
+        requirePrimaryUsageLimit: Bool,
+        timeout: TimeInterval) async throws -> OpenAIDashboardSnapshot
+    {
         let deadline = Date().addingTimeInterval(timeout)
         var lastBody: String?
         var lastHTML: String?
@@ -130,29 +142,14 @@ public struct OpenAIDashboardFetcher {
                 continue
             }
 
-            if scrape.loginRequired {
-                let now = Date()
-                let hrefLower = scrape.href?.lowercased() ?? ""
-                let onExplicitLoginRoute = hrefLower.contains("/auth/") || hrefLower.contains("/login")
-                let hasSignedInEmail = scrape.signedInEmail?
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                    .isEmpty == false
-                let authStatus = scrape.authStatus?.lowercased()
-                if loginSignalFirstSeenAt == nil { loginSignalFirstSeenAt = now }
-                let elapsed = now.timeIntervalSince(loginSignalFirstSeenAt ?? now)
-                let shouldRetryTransientLogin = authStatus == "logged_in" || hasSignedInEmail
-                    || (!onExplicitLoginRoute && elapsed < 8)
-                if shouldRetryTransientLogin {
-                    if !onExplicitLoginRoute {
-                        _ = webView.load(URLRequest(url: self.usageURL))
-                    }
-                    try? await Task.sleep(for: .milliseconds(500))
-                    continue
-                }
-                if debugDumpHTML, let html = scrape.bodyHTML {
-                    Self.writeDebugArtifacts(html: html, bodyText: scrape.bodyText, logger: log)
-                }
-                throw FetchError.loginRequired
+            if try await self.handleLoginRequired(
+                scrape: scrape,
+                webView: webView,
+                log: log,
+                debugDumpHTML: debugDumpHTML,
+                loginSignalFirstSeenAt: &loginSignalFirstSeenAt)
+            {
+                continue
             }
             loginSignalFirstSeenAt = nil
 
@@ -299,6 +296,39 @@ public struct OpenAIDashboardFetcher {
             return context.now.timeIntervalSince(anyDashboardSignalAt) < 6.5
         }
         return false
+    }
+
+    @MainActor
+    private func handleLoginRequired(
+        scrape: ScrapeResult,
+        webView: WKWebView,
+        log: (String) -> Void,
+        debugDumpHTML: Bool,
+        loginSignalFirstSeenAt: inout Date?) async throws -> Bool
+    {
+        guard scrape.loginRequired else { return false }
+        let now = Date()
+        let hrefLower = scrape.href?.lowercased() ?? ""
+        let onExplicitLoginRoute = hrefLower.contains("/auth/") || hrefLower.contains("/login")
+        let hasSignedInEmail = scrape.signedInEmail?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .isEmpty == false
+        let authStatus = scrape.authStatus?.lowercased()
+        if loginSignalFirstSeenAt == nil { loginSignalFirstSeenAt = now }
+        let elapsed = now.timeIntervalSince(loginSignalFirstSeenAt ?? now)
+        let shouldRetryTransientLogin = authStatus == "logged_in" || hasSignedInEmail
+            || (!onExplicitLoginRoute && elapsed < 8)
+        if shouldRetryTransientLogin {
+            if !onExplicitLoginRoute {
+                _ = webView.load(URLRequest(url: self.usageURL))
+            }
+            try? await Task.sleep(for: .milliseconds(500))
+            return true
+        }
+        if debugDumpHTML, let html = scrape.bodyHTML {
+            Self.writeDebugArtifacts(html: html, bodyText: scrape.bodyText, logger: log)
+        }
+        throw FetchError.loginRequired
     }
 
     public func clearSessionData(accountEmail: String?) async {
