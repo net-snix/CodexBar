@@ -518,12 +518,14 @@ final class UsageStore {
 
     func startTimer() {
         self.timerTask?.cancel()
-        guard let wait = self.settings.refreshFrequency.seconds else { return }
+        guard let cadenceSeconds = self.settings.refreshFrequency.seconds else { return }
 
-        // Background poller so the menu stays responsive; canceled when settings change or store deallocates.
+        // Align refreshes to cadence boundaries so a 5m cadence lands on x:00/x:05/x:10... wall-clock buckets.
         self.timerTask = Task.detached(priority: .utility) { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(wait))
+                let sleepSeconds = UsageStore.secondsUntilNextCadenceBoundary(cadenceSeconds: cadenceSeconds)
+                try? await Task.sleep(for: .seconds(sleepSeconds))
+                guard !Task.isCancelled else { return }
                 await self?.refresh()
             }
         }
@@ -1604,9 +1606,12 @@ extension UsageStore {
         guard !self.tokenRefreshInFlight.contains(provider) else { return }
 
         let now = Date()
+        let refreshInterval = Self.tokenRefreshIntervalSeconds(
+            for: self.settings.refreshFrequency,
+            fallbackSeconds: self.tokenFetchTTL)
         if !force,
            let last = self.lastTokenFetchAt[provider],
-           now.timeIntervalSince(last) < self.tokenFetchTTL
+           now.timeIntervalSince(last) < refreshInterval
         {
             return
         }

@@ -13,6 +13,8 @@ read_when:
 
 ## Behavior
 - Background refresh runs off-main and updates `UsageStore` (usage + credits + optional web scrape).
+- Polls align to cadence boundaries (`5m` => `:00/:05/:10/...`) instead of drifting from app launch time.
+- Token-cost usage refresh interval follows the selected refresh cadence.
 - Manual refresh available via the menu “Refresh” action and the in-card Cost refresh button.
 - Stale/error states dim the icon and surface status in-menu.
 

@@ -43,7 +43,7 @@ struct GeneralPane: View {
                                 .fixedSize(horizontal: false, vertical: true)
 
                             if self.settings.costUsageEnabled {
-                                Text("Auto-refresh: hourly · Timeout: 10m")
+                                Text(self.costUsageRefreshDescription())
                                     .font(.footnote)
                                     .foregroundStyle(.tertiary)
 
@@ -161,5 +161,12 @@ struct GeneralPane: View {
         return Text("\(name): no data yet")
             .font(.footnote)
             .foregroundStyle(.tertiary)
+    }
+
+    private func costUsageRefreshDescription() -> String {
+        if self.settings.refreshFrequency == .manual {
+            return "Auto-refresh: off (manual) · Timeout: 10m"
+        }
+        return "Auto-refresh: every \(self.settings.refreshFrequency.label.lowercased()) · Timeout: 10m"
     }
 }
