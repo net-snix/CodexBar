@@ -45,6 +45,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
     var fallbackMenu: NSMenu?
     var openMenus: [ObjectIdentifier: NSMenu] = [:]
     var menuRefreshTasks: [ObjectIdentifier: Task<Void, Never>] = [:]
+    var menuInvalidationScheduled = false
     var blinkTask: Task<Void, Never>?
     var loadingFrameCache: [LoadingFrameCacheKey: NSImage] = [:]
     var loadingFrameOrder: [LoadingFrameCacheKey] = []
@@ -211,7 +212,7 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
 
     private func observeStoreChanges() {
         withObservationTracking {
-            _ = self.store.menuObservationToken
+            _ = self.store.statusItemObservationToken
         } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self else { return }
@@ -255,6 +256,12 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
     @objc private func handleProviderConfigDidChange(_ notification: Notification) {
         let reason = notification.userInfo?["reason"] as? String ?? "unknown"
         if let source = notification.object as? SettingsStore,
+           source === self.settings
+        {
+            // Local settings mutations already flow through settings observation.
+            return
+        }
+        if let source = notification.object as? SettingsStore,
            source !== self.settings
         {
             if let config = notification.userInfo?["config"] as? CodexBarConfig {
@@ -280,24 +287,18 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
 
     private func invalidateMenus() {
         self.menuContentVersion &+= 1
-        if !self.openMenus.isEmpty {
-            // Keep open menus in sync while tracking so in-menu refresh controls update usage/cost in-place.
-            self.refreshOpenMenusIfNeeded()
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await Task.yield()
-                guard !self.openMenus.isEmpty else { return }
-                self.refreshOpenMenusIfNeeded()
-            }
-            return
-        }
-
+        guard !self.menuInvalidationScheduled else { return }
+        self.menuInvalidationScheduled = true
         self.refreshOpenMenusIfNeeded()
         Task { @MainActor [weak self] in
             guard let self else { return }
-            // AppKit can ignore menu mutations while tracking; retry on the next run loop.
             await Task.yield()
-            guard self.openMenus.isEmpty else { return }
+            self.menuInvalidationScheduled = false
+            // AppKit can ignore menu mutations while tracking; retry on the next run loop.
+            if !self.openMenus.isEmpty {
+                self.refreshOpenMenusIfNeeded()
+                return
+            }
             self.refreshOpenMenusIfNeeded()
         }
     }
@@ -490,6 +491,11 @@ final class StatusItemController: NSObject, NSMenuDelegate, StatusItemControllin
     }
 
     deinit {
+        let animationDriver = self.animationDriver
+        Task { @MainActor in
+            animationDriver?.stop()
+        }
+        self.animationDriver = nil
         self.blinkTask?.cancel()
         self.loginTask?.cancel()
         NotificationCenter.default.removeObserver(self)

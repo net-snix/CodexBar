@@ -53,7 +53,43 @@ extension UsageStore {
     }
 
     func accountInfo() -> AccountInfo {
-        self.codexFetcher.loadAccountInfo()
+        let now = Date()
+        if let cached = self.cachedAccountInfo,
+           let loadedAt = self.cachedAccountInfoLoadedAt
+        {
+            if now.timeIntervalSince(loadedAt) < self.accountInfoCacheTTL {
+                return cached
+            }
+            self.refreshAccountInfoCacheIfNeeded()
+            return cached
+        }
+
+        let info = self.codexFetcher.loadAccountInfo()
+        self.cachedAccountInfo = info
+        self.cachedAccountInfoLoadedAt = now
+        return info
+    }
+
+    func refreshAccountInfoCacheIfNeeded(force: Bool = false) {
+        let now = Date()
+        if !force,
+           let loadedAt = self.cachedAccountInfoLoadedAt,
+           now.timeIntervalSince(loadedAt) < self.accountInfoCacheTTL
+        {
+            return
+        }
+        guard self.accountInfoRefreshTask == nil else { return }
+
+        let fetcher = self.codexFetcher
+        self.accountInfoRefreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.accountInfoRefreshTask = nil }
+            let info = await Task.detached(priority: .utility) {
+                fetcher.loadAccountInfo()
+            }.value
+            self.cachedAccountInfo = info
+            self.cachedAccountInfoLoadedAt = Date()
+        }
     }
 
     private func codexPlanName() -> String? {

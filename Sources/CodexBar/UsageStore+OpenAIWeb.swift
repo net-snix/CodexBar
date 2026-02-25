@@ -3,6 +3,43 @@ import Foundation
 // MARK: - OpenAI web error messaging
 
 extension UsageStore {
+    static let openAIWebRefreshMultiplier: TimeInterval = 5
+
+    func openAIWebRefreshIntervalSeconds() -> TimeInterval {
+        let base = max(self.settings.refreshFrequency.seconds ?? 0, 120)
+        return base * Self.openAIWebRefreshMultiplier
+    }
+
+    func requestOpenAIDashboardRefreshIfStale(reason: String) {
+        guard self.isEnabled(.codex), self.settings.codexCookieSource.isEnabled else { return }
+        let now = Date()
+        let refreshInterval = self.openAIWebRefreshIntervalSeconds()
+        let lastUpdatedAt = self.openAIDashboard?.updatedAt ?? self.lastOpenAIDashboardSnapshot?.updatedAt
+        if let lastUpdatedAt, now.timeIntervalSince(lastUpdatedAt) < refreshInterval { return }
+        let stamp = now.formatted(date: .abbreviated, time: .shortened)
+        self.logOpenAIWeb("[\(stamp)] OpenAI web refresh request: \(reason)")
+        guard self.openAIDashboardRefreshTask == nil else { return }
+        self.openAIDashboardRefreshTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.openAIDashboardRefreshTask = nil }
+            await self.refreshOpenAIDashboardIfNeeded(force: true)
+        }
+    }
+
+    func codexAccountEmailForOpenAIDashboard() -> String? {
+        let direct = self.snapshots[.codex]?.accountEmail(for: .codex)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        if let direct, !direct.isEmpty { return direct }
+        self.refreshAccountInfoCacheIfNeeded()
+        let fallback = self.accountInfo().email?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let fallback, !fallback.isEmpty { return fallback }
+        let cached = self.openAIDashboard?.signedInEmail?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let cached, !cached.isEmpty { return cached }
+        let imported = self.lastOpenAIDashboardCookieImportEmail?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let imported, !imported.isEmpty { return imported }
+        return nil
+    }
+
     func openAIDashboardFriendlyError(
         body: String,
         targetEmail: String?,

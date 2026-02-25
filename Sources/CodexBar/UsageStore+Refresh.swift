@@ -8,9 +8,22 @@ extension UsageStore {
     }
 
     func refreshProvider(_ provider: UsageProvider, allowDisabled: Bool = false) async {
-        guard let spec = self.providerSpecs[provider] else { return }
+        let probe = PerformanceProbe.begin("usage_store.refresh_provider", metadata: [
+            "provider": provider.rawValue,
+            "allow_disabled": "\(allowDisabled)",
+        ])
+        var probeResult = "completed"
+        defer {
+            PerformanceProbe.end(probe, metadata: ["result": probeResult])
+        }
+
+        guard let spec = self.providerSpecs[provider] else {
+            probeResult = "missing_spec"
+            return
+        }
 
         if !spec.isEnabled(), !allowDisabled {
+            probeResult = "disabled"
             self.refreshingProviders.remove(provider)
             await MainActor.run {
                 self.snapshots.removeValue(forKey: provider)
@@ -34,6 +47,7 @@ extension UsageStore {
 
         let tokenAccounts = self.tokenAccounts(for: provider)
         if self.shouldFetchAllTokenAccounts(provider: provider, accounts: tokenAccounts) {
+            probeResult = "token_accounts"
             await self.refreshTokenAccounts(provider: provider, accounts: tokenAccounts)
             return
         } else {
@@ -76,6 +90,7 @@ extension UsageStore {
 
         switch outcome.result {
         case let .success(result):
+            probeResult = "success"
             let scoped = result.usage.scoped(to: provider)
             await MainActor.run {
                 self.handleSessionQuotaTransition(provider: provider, snapshot: scoped)
@@ -93,6 +108,7 @@ extension UsageStore {
                 runtime.providerDidRefresh(context: context, provider: provider)
             }
         case let .failure(error):
+            probeResult = "failure"
             await MainActor.run {
                 let hadPriorData = self.snapshots[provider] != nil
                 let shouldSurface =

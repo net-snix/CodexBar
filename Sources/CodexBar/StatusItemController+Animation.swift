@@ -655,7 +655,8 @@ extension StatusItemController {
                     self?.updateAnimationFrame()
                 })
                 self.animationDriver = driver
-                driver.start(fps: 60)
+                let targetFPS: Double = self.settings.debugLoadingPattern == nil ? 15 : 60
+                driver.start(fps: targetFPS)
             } else if let forced = self.settings.debugLoadingPattern, forced != self.animationPattern {
                 self.animationPattern = forced
                 self.animationPhase = 0

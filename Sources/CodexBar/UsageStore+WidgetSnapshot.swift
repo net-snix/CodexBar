@@ -6,12 +6,42 @@ import WidgetKit
 
 extension UsageStore {
     func persistWidgetSnapshot(reason: String) {
+        let probe = PerformanceProbe.begin("usage_store.widget_snapshot", metadata: ["reason": reason])
         let snapshot = self.makeWidgetSnapshot()
         let signature = Self.widgetSnapshotSignature(snapshot)
         let now = Date()
         let shouldReload = self.shouldReloadWidgetTimelines(signature: signature, now: now)
+        guard signature != self.lastPersistedWidgetSnapshotSignature else {
+            if shouldReload {
+                Task.detached(priority: .utility) {
+                    #if canImport(WidgetKit)
+                    await MainActor.run {
+                        WidgetCenter.shared.reloadAllTimelines()
+                    }
+                    #endif
+                }
+            }
+            PerformanceProbe.count("widget_snapshot.persist.skipped")
+            PerformanceProbe.end(probe, metadata: [
+                "changed": "false",
+                "entries": "\(snapshot.entries.count)",
+                "reload": "\(shouldReload)",
+            ])
+            return
+        }
+        self.lastPersistedWidgetSnapshotSignature = signature
+        PerformanceProbe.count("widget_snapshot.persist.changed")
+        PerformanceProbe.end(probe, metadata: [
+            "changed": "true",
+            "entries": "\(snapshot.entries.count)",
+            "reload": "\(shouldReload)",
+        ])
         Task.detached(priority: .utility) {
+            let saveProbe = PerformanceProbe.begin("widget_snapshot.save", metadata: [
+                "entries": "\(snapshot.entries.count)",
+            ])
             WidgetSnapshotStore.save(snapshot)
+            PerformanceProbe.end(saveProbe)
             #if canImport(WidgetKit)
             if shouldReload {
                 await MainActor.run {

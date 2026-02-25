@@ -1,5 +1,30 @@
 import Foundation
 
+private final class UsageStoreStatusISO8601FormatterBox: @unchecked Sendable {
+    let lock = NSLock()
+    let withFractional: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+
+    let plain: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter
+    }()
+}
+
+private enum UsageStoreStatusISO8601Parser {
+    static let box = UsageStoreStatusISO8601FormatterBox()
+
+    static func parse(_ text: String) -> Date? {
+        self.box.lock.lock()
+        defer { self.box.lock.unlock() }
+        return self.box.withFractional.date(from: text) ?? self.box.plain.date(from: text)
+    }
+}
+
 extension UsageStore {
     static func fetchStatus(from baseURL: URL) async throws -> ProviderStatus {
         let apiURL = baseURL.appendingPathComponent("api/v2/status.json")
@@ -27,16 +52,7 @@ extension UsageStore {
         }
 
         let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .custom { decoder in
-            let container = try decoder.singleValueContainer()
-            let raw = try container.decode(String.self)
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: raw) { return date }
-            formatter.formatOptions = [.withInternetDateTime]
-            if let date = formatter.date(from: raw) { return date }
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO8601 date")
-        }
+        Self.configureISO8601DateDecoding(decoder)
 
         let response = try decoder.decode(Response.self, from: data)
         let indicator = ProviderStatusIndicator(rawValue: response.status.indicator) ?? .unknown
@@ -59,16 +75,7 @@ extension UsageStore {
     static func parseGoogleWorkspaceStatus(data: Data, productID: String) throws -> ProviderStatus {
         let decoder = JSONDecoder()
         decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .custom { decoder in
-            let container = try decoder.singleValueContainer()
-            let raw = try container.decode(String.self)
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            if let date = formatter.date(from: raw) { return date }
-            formatter.formatOptions = [.withInternetDateTime]
-            if let date = formatter.date(from: raw) { return date }
-            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO8601 date")
-        }
+        Self.configureISO8601DateDecoding(decoder)
 
         let incidents = try decoder.decode([GoogleWorkspaceIncident].self, from: data)
         let active = incidents.filter { $0.isRelevant(productID: productID) && $0.isActive }
@@ -150,6 +157,19 @@ extension UsageStore {
             if !cleaned.isEmpty { return cleaned }
         }
         return nil
+    }
+
+    private nonisolated static func configureISO8601DateDecoding(_ decoder: JSONDecoder) {
+        decoder.dateDecodingStrategy = .custom { decoder in
+            try Self.decodeISO8601Date(decoder)
+        }
+    }
+
+    private nonisolated static func decodeISO8601Date(_ decoder: Decoder) throws -> Date {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        if let date = UsageStoreStatusISO8601Parser.parse(raw) { return date }
+        throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid ISO8601 date")
     }
 
     private struct GoogleWorkspaceIncident: Decodable {

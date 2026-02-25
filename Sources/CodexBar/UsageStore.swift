@@ -4,66 +4,6 @@ import Foundation
 import Observation
 import SweetCookieKit
 
-// MARK: - Observation helpers
-
-@MainActor
-extension UsageStore {
-    var menuObservationToken: Int {
-        _ = self.snapshots
-        _ = self.errors
-        _ = self.lastSourceLabels
-        _ = self.lastFetchAttempts
-        _ = self.accountSnapshots
-        _ = self.tokenSnapshots
-        _ = self.tokenErrors
-        _ = self.tokenRefreshInFlight
-        _ = self.credits
-        _ = self.lastCreditsError
-        _ = self.openAIDashboard
-        _ = self.lastOpenAIDashboardError
-        _ = self.openAIDashboardRequiresLogin
-        _ = self.openAIDashboardCookieImportStatus
-        _ = self.openAIDashboardCookieImportDebugLog
-        _ = self.versions
-        _ = self.isRefreshing
-        _ = self.refreshingProviders
-        _ = self.pathDebugInfo
-        _ = self.statuses
-        _ = self.probeLogs
-        return 0
-    }
-
-    func observeSettingsChanges() {
-        withObservationTracking {
-            _ = self.settings.refreshFrequency
-            _ = self.settings.statusChecksEnabled
-            _ = self.settings.sessionQuotaNotificationsEnabled
-            _ = self.settings.usageBarsShowUsed
-            _ = self.settings.costUsageEnabled
-            _ = self.settings.codexSparkUsageEnabled
-            _ = self.settings.randomBlinkEnabled
-            _ = self.settings.configRevision
-            for implementation in ProviderCatalog.all {
-                implementation.observeSettings(self.settings)
-            }
-            _ = self.settings.showAllTokenAccountsInMenu
-            _ = self.settings.tokenAccountsByProvider
-            _ = self.settings.mergeIcons
-            _ = self.settings.selectedMenuProvider
-            _ = self.settings.debugLoadingPattern
-            _ = self.settings.debugKeepCLISessionsAlive
-        } onChange: { [weak self] in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.observeSettingsChanges()
-                self.startTimer()
-                self.updateProviderRuntimes()
-                await self.refresh()
-            }
-        }
-    }
-}
-
 enum ProviderStatusIndicator: String {
     case none
     case minor
@@ -90,26 +30,6 @@ enum ProviderStatusIndicator: String {
         }
     }
 }
-
-#if DEBUG
-extension UsageStore {
-    func _setSnapshotForTesting(_ snapshot: UsageSnapshot?, provider: UsageProvider) {
-        self.snapshots[provider] = snapshot?.scoped(to: provider)
-    }
-
-    func _setTokenSnapshotForTesting(_ snapshot: CostUsageTokenSnapshot?, provider: UsageProvider) {
-        self.tokenSnapshots[provider] = snapshot
-    }
-
-    func _setTokenErrorForTesting(_ error: String?, provider: UsageProvider) {
-        self.tokenErrors[provider] = error
-    }
-
-    func _setErrorForTesting(_ error: String?, provider: UsageProvider) {
-        self.errors[provider] = error
-    }
-}
-#endif
 
 struct ProviderStatus {
     let indicator: ProviderStatusIndicator
@@ -140,6 +60,18 @@ struct ConsecutiveFailureGate {
 @MainActor
 @Observable
 final class UsageStore {
+    private struct AvailabilityCacheEntry {
+        let value: Bool
+        let expiresAt: Date
+        let configRevision: Int
+    }
+
+    private struct EnabledProvidersCacheEntry {
+        let providers: [UsageProvider]
+        let expiresAt: Date
+        let configRevision: Int
+    }
+
     var snapshots: [UsageProvider: UsageSnapshot] = [:]
     var errors: [UsageProvider: String] = [:]
     var lastSourceLabels: [UsageProvider: String] = [:]
@@ -164,10 +96,10 @@ final class UsageStore {
     var probeLogs: [UsageProvider: String] = [:]
     @ObservationIgnored private var lastCreditsSnapshot: CreditsSnapshot?
     @ObservationIgnored private var creditsFailureStreak: Int = 0
-    @ObservationIgnored private var lastOpenAIDashboardSnapshot: OpenAIDashboardSnapshot?
+    @ObservationIgnored var lastOpenAIDashboardSnapshot: OpenAIDashboardSnapshot?
     @ObservationIgnored private var lastOpenAIDashboardTargetEmail: String?
     @ObservationIgnored private var lastOpenAIDashboardCookieImportAttemptAt: Date?
-    @ObservationIgnored private var lastOpenAIDashboardCookieImportEmail: String?
+    @ObservationIgnored var lastOpenAIDashboardCookieImportEmail: String?
     @ObservationIgnored private var openAIWebAccountDidChange: Bool = false
 
     @ObservationIgnored let codexFetcher: UsageFetcher
@@ -183,6 +115,7 @@ final class UsageStore {
     @ObservationIgnored let augmentLogger = CodexBarLog.logger(LogCategories.augment)
     @ObservationIgnored let providerLogger = CodexBarLog.logger(LogCategories.providers)
     @ObservationIgnored private var openAIWebDebugLines: [String] = []
+    @ObservationIgnored private var openAIWebDebugText = ""
     @ObservationIgnored var failureGates: [UsageProvider: ConsecutiveFailureGate] = [:]
     @ObservationIgnored var tokenFailureGates: [UsageProvider: ConsecutiveFailureGate] = [:]
     @ObservationIgnored var providerSpecs: [UsageProvider: ProviderSpec] = [:]
@@ -190,14 +123,25 @@ final class UsageStore {
     @ObservationIgnored var providerRuntimes: [UsageProvider: any ProviderRuntime] = [:]
     @ObservationIgnored private var timerTask: Task<Void, Never>?
     @ObservationIgnored private var tokenTimerTask: Task<Void, Never>?
+    @ObservationIgnored var settingsRefreshTask: Task<Void, Never>?
     @ObservationIgnored private var tokenRefreshSequenceTask: Task<Void, Never>?
     @ObservationIgnored private var pathDebugRefreshTask: Task<Void, Never>?
+    @ObservationIgnored var openAIDashboardRefreshTask: Task<Void, Never>?
+    @ObservationIgnored private var openAIDashboardRefreshInFlight = false
+    @ObservationIgnored var cachedAccountInfo: AccountInfo?
+    @ObservationIgnored var cachedAccountInfoLoadedAt: Date?
+    @ObservationIgnored var accountInfoRefreshTask: Task<Void, Never>?
+    @ObservationIgnored let accountInfoCacheTTL: TimeInterval = 30
     @ObservationIgnored var lastKnownSessionRemaining: [UsageProvider: Double] = [:]
     @ObservationIgnored var lastTokenFetchAt: [UsageProvider: Date] = [:]
     @ObservationIgnored private var hasCompletedInitialRefresh: Bool = false
     @ObservationIgnored private let tokenFetchTTL: TimeInterval = 60 * 60
     @ObservationIgnored private let tokenFetchTimeout: TimeInterval = 10 * 60
+    @ObservationIgnored private var providerAvailabilityCache: [UsageProvider: AvailabilityCacheEntry] = [:]
+    @ObservationIgnored private var enabledProvidersCache: EnabledProvidersCacheEntry?
+    @ObservationIgnored var providerAvailabilityCacheTTL: TimeInterval = 0.35
     @ObservationIgnored var lastWidgetSnapshotSignature: String?
+    @ObservationIgnored var lastPersistedWidgetSnapshotSignature: String?
     @ObservationIgnored var lastWidgetTimelineReloadAt: Date?
     @ObservationIgnored let widgetTimelineReloadMinimumInterval: TimeInterval = 60
 
@@ -306,9 +250,30 @@ final class UsageStore {
     }
 
     func enabledProviders() -> [UsageProvider] {
+        let now = Date()
+        let revision = self.settings.configRevision
+        if let cached = self.enabledProvidersCache,
+           cached.configRevision == revision,
+           cached.expiresAt > now
+        {
+            PerformanceProbe.count("enabled_providers.cache_hit")
+            return cached.providers
+        }
+
+        let probe = PerformanceProbe.begin("usage_store.enabled_providers")
         // Use cached enablement to avoid repeated UserDefaults lookups in animation ticks.
         let enabled = self.settings.enabledProvidersOrdered(metadataByProvider: self.providerMetadata)
-        return enabled.filter { self.isProviderAvailable($0) }
+        let providers = enabled.filter { self.isProviderAvailable($0, now: now) }
+        self.enabledProvidersCache = EnabledProvidersCacheEntry(
+            providers: providers,
+            expiresAt: now.addingTimeInterval(self.providerAvailabilityCacheTTL),
+            configRevision: revision)
+        PerformanceProbe.count("enabled_providers.cache_miss")
+        PerformanceProbe.end(probe, metadata: [
+            "enabled_count": "\(enabled.count)",
+            "result_count": "\(providers.count)",
+        ])
+        return providers
     }
 
     /// Returns the enabled provider with the highest usage percentage (closest to rate limit).
@@ -400,6 +365,19 @@ final class UsageStore {
     }
 
     func isProviderAvailable(_ provider: UsageProvider) -> Bool {
+        self.isProviderAvailable(provider, now: Date())
+    }
+
+    private func isProviderAvailable(_ provider: UsageProvider, now: Date) -> Bool {
+        let revision = self.settings.configRevision
+        if let cached = self.providerAvailabilityCache[provider],
+           cached.configRevision == revision,
+           cached.expiresAt > now
+        {
+            PerformanceProbe.count("provider_available.cache_hit", metadata: ["provider": provider.rawValue])
+            return cached.value
+        }
+        let probe = PerformanceProbe.begin("usage_store.provider_available", metadata: ["provider": provider.rawValue])
         // Availability should mirror the effective fetch environment, including token-account overrides.
         // Otherwise providers (notably token-account-backed API providers) can fetch successfully but be
         // hidden from the menu because their credentials are not in ProcessInfo's environment.
@@ -412,9 +390,21 @@ final class UsageStore {
             provider: provider,
             settings: self.settings,
             environment: environment)
-        return ProviderCatalog.implementation(for: provider)?
+        let available = ProviderCatalog.implementation(for: provider)?
             .isAvailable(context: context)
             ?? true
+        self.providerAvailabilityCache[provider] = AvailabilityCacheEntry(
+            value: available,
+            expiresAt: now.addingTimeInterval(self.providerAvailabilityCacheTTL),
+            configRevision: revision)
+        PerformanceProbe.count("provider_available.cache_miss", metadata: ["provider": provider.rawValue])
+        PerformanceProbe.end(probe, metadata: ["available": "\(available)"])
+        return available
+    }
+
+    func invalidateProviderAvailabilityCache() {
+        self.providerAvailabilityCache.removeAll(keepingCapacity: true)
+        self.enabledProvidersCache = nil
     }
 
     func performRuntimeAction(_ action: ProviderRuntimeAction, for provider: UsageProvider) async {
@@ -423,7 +413,7 @@ final class UsageStore {
         await runtime.perform(action: action, context: context)
     }
 
-    private func updateProviderRuntimes() {
+    func updateProviderRuntimes() {
         for (provider, runtime) in self.providerRuntimes {
             let context = ProviderRuntimeContext(provider: provider, settings: self.settings, store: self)
             if self.isEnabled(provider) {
@@ -436,12 +426,16 @@ final class UsageStore {
     }
 
     func refresh(forceTokenUsage: Bool = false) async {
+        let refreshProbe = PerformanceProbe.begin("usage_store.refresh", metadata: [
+            "force_token_usage": "\(forceTokenUsage)",
+        ])
         guard !self.isRefreshing else {
             // A user-initiated refresh can arrive while an automatic/provider refresh is still running.
             // Still force token-cost refresh so the Cost section updates on click.
             if forceTokenUsage {
                 self.scheduleTokenRefresh(force: true)
             }
+            PerformanceProbe.end(refreshProbe, metadata: ["result": "skipped_in_flight"])
             return
         }
         let refreshPhase: ProviderRefreshPhase = self.hasCompletedInitialRefresh ? .regular : .startup
@@ -473,6 +467,10 @@ final class UsageStore {
 
             self.persistWidgetSnapshot(reason: "refresh")
         }
+        PerformanceProbe.end(refreshProbe, metadata: [
+            "phase": refreshPhase == .startup ? "startup" : "regular",
+            "provider_count": "\(self.enabledProviders().count)",
+        ])
     }
 
     func refreshProviderFromMenu(_ provider: UsageProvider, forceTokenUsage: Bool = false) async {
@@ -518,7 +516,7 @@ final class UsageStore {
         self.observeSettingsChanges()
     }
 
-    private func startTimer() {
+    func startTimer() {
         self.timerTask?.cancel()
         guard let wait = self.settings.refreshFrequency.seconds else { return }
 
@@ -600,7 +598,11 @@ final class UsageStore {
     deinit {
         self.timerTask?.cancel()
         self.tokenTimerTask?.cancel()
+        self.settingsRefreshTask?.cancel()
         self.tokenRefreshSequenceTask?.cancel()
+        self.pathDebugRefreshTask?.cancel()
+        self.openAIDashboardRefreshTask?.cancel()
+        self.accountInfoRefreshTask?.cancel()
     }
 
     func handleSessionQuotaTransition(provider: UsageProvider, snapshot: UsageSnapshot) {
@@ -703,24 +705,6 @@ final class UsageStore {
 }
 
 extension UsageStore {
-    private static let openAIWebRefreshMultiplier: TimeInterval = 5
-
-    private func openAIWebRefreshIntervalSeconds() -> TimeInterval {
-        let base = max(self.settings.refreshFrequency.seconds ?? 0, 120)
-        return base * Self.openAIWebRefreshMultiplier
-    }
-
-    func requestOpenAIDashboardRefreshIfStale(reason: String) {
-        guard self.isEnabled(.codex), self.settings.codexCookieSource.isEnabled else { return }
-        let now = Date()
-        let refreshInterval = self.openAIWebRefreshIntervalSeconds()
-        let lastUpdatedAt = self.openAIDashboard?.updatedAt ?? self.lastOpenAIDashboardSnapshot?.updatedAt
-        if let lastUpdatedAt, now.timeIntervalSince(lastUpdatedAt) < refreshInterval { return }
-        let stamp = now.formatted(date: .abbreviated, time: .shortened)
-        self.logOpenAIWeb("[\(stamp)] OpenAI web refresh request: \(reason)")
-        Task { await self.refreshOpenAIDashboardIfNeeded(force: true) }
-    }
-
     private func applyOpenAIDashboard(_ dash: OpenAIDashboardSnapshot, targetEmail: String?) async {
         await MainActor.run {
             self.openAIDashboard = dash
@@ -745,7 +729,10 @@ extension UsageStore {
         }
 
         if let email = targetEmail, !email.isEmpty {
-            OpenAIDashboardCacheStore.save(OpenAIDashboardCache(accountEmail: email, snapshot: dash))
+            let cache = OpenAIDashboardCache(accountEmail: email, snapshot: dash)
+            Task.detached(priority: .utility) {
+                OpenAIDashboardCacheStore.save(cache)
+            }
         }
     }
 
@@ -763,7 +750,11 @@ extension UsageStore {
         }
     }
 
-    private func refreshOpenAIDashboardIfNeeded(force: Bool = false) async {
+    func refreshOpenAIDashboardIfNeeded(force: Bool = false) async {
+        guard !self.openAIDashboardRefreshInFlight else { return }
+        self.openAIDashboardRefreshInFlight = true
+        defer { self.openAIDashboardRefreshInFlight = false }
+
         guard self.isEnabled(.codex), self.settings.codexCookieSource.isEnabled else {
             self.resetOpenAIWebState()
             return
@@ -1092,18 +1083,28 @@ extension UsageStore {
     private func resetOpenAIWebDebugLog(context: String) {
         let stamp = Date().formatted(date: .abbreviated, time: .shortened)
         self.openAIWebDebugLines.removeAll(keepingCapacity: true)
+        self.openAIWebDebugText = ""
         self.openAIDashboardCookieImportDebugLog = nil
         self.logOpenAIWeb("[\(stamp)] OpenAI web \(context) start")
     }
 
-    private func logOpenAIWeb(_ message: String) {
+    func logOpenAIWeb(_ message: String) {
         let safeMessage = LogRedactor.redact(message)
         self.openAIWebLogger.debug(safeMessage)
         self.openAIWebDebugLines.append(safeMessage)
+        PerformanceProbe.count(
+            "openai_web.debug_log.line",
+            metadata: ["bytes": "\(safeMessage.utf8.count)"])
         if self.openAIWebDebugLines.count > 240 {
             self.openAIWebDebugLines.removeFirst(self.openAIWebDebugLines.count - 240)
+            self.openAIWebDebugText = self.openAIWebDebugLines.joined(separator: "\n")
+        } else if self.openAIWebDebugText.isEmpty {
+            self.openAIWebDebugText = safeMessage
+        } else {
+            self.openAIWebDebugText.append("\n")
+            self.openAIWebDebugText.append(safeMessage)
         }
-        self.openAIDashboardCookieImportDebugLog = self.openAIWebDebugLines.joined(separator: "\n")
+        self.openAIDashboardCookieImportDebugLog = self.openAIWebDebugText
     }
 
     func resetOpenAIWebState() {
@@ -1116,25 +1117,13 @@ extension UsageStore {
         self.openAIDashboardCookieImportDebugLog = nil
         self.lastOpenAIDashboardCookieImportAttemptAt = nil
         self.lastOpenAIDashboardCookieImportEmail = nil
+        self.openAIWebDebugText = ""
     }
 
     private func dashboardEmailMismatch(expected: String?, actual: String?) -> Bool {
         guard let expected, !expected.isEmpty else { return false }
         guard let raw = actual?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty else { return false }
         return raw.lowercased() != expected.lowercased()
-    }
-
-    func codexAccountEmailForOpenAIDashboard() -> String? {
-        let direct = self.snapshots[.codex]?.accountEmail(for: .codex)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        if let direct, !direct.isEmpty { return direct }
-        let fallback = self.codexFetcher.loadAccountInfo().email?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let fallback, !fallback.isEmpty { return fallback }
-        let cached = self.openAIDashboard?.signedInEmail?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let cached, !cached.isEmpty { return cached }
-        let imported = self.lastOpenAIDashboardCookieImportEmail?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let imported, !imported.isEmpty { return imported }
-        return nil
     }
 }
 

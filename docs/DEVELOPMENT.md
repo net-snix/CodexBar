@@ -122,6 +122,15 @@ export CODEXBAR_LOG_LEVEL=debug
 swift test
 ```
 
+### Profile Hot Paths
+```bash
+# Emits perf counters/timers as structured log metadata
+./Scripts/perf_hotpaths.sh
+
+# Or run full app with probes enabled
+CODEXBAR_PROFILE_PERF=1 ./Scripts/compile_and_run.sh
+```
+
 ### Format Code
 ```bash
 swiftformat Sources Tests

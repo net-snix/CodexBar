@@ -346,12 +346,17 @@ private final class CodexRPCClient: @unchecked Sendable {
 
             self.buffer.append(data)
             var out: [Data] = []
-            while let newline = self.buffer.firstIndex(of: 0x0A) {
-                let lineData = Data(self.buffer[..<newline])
-                self.buffer.removeSubrange(...newline)
+            var scanStart = self.buffer.startIndex
+            while let newline = self.buffer[scanStart...].firstIndex(of: 0x0A) {
+                let lineData = Data(self.buffer[scanStart..<newline])
                 if !lineData.isEmpty {
                     out.append(lineData)
                 }
+                scanStart = self.buffer.index(after: newline)
+            }
+
+            if scanStart > self.buffer.startIndex {
+                self.buffer.removeSubrange(..<scanStart)
             }
             return out
         }

@@ -30,9 +30,11 @@ public enum OpenAIDashboardParser {
 
         // Fallback: BFS scan for an email key/value.
         var queue: [Any] = [json]
+        var cursor = 0
         var seen = 0
-        while !queue.isEmpty, seen < 4000 {
-            let cur = queue.removeFirst()
+        while cursor < queue.count, seen < 4000 {
+            let cur = queue[cursor]
+            cursor += 1
             seen += 1
             if let dict = cur as? [String: Any] {
                 for (k, v) in dict {
@@ -448,9 +450,11 @@ public enum OpenAIDashboardParser {
 
     private static func findPlan(in json: Any) -> String? {
         var queue: [Any] = [json]
+        var cursor = 0
         var seen = 0
-        while !queue.isEmpty, seen < 6000 {
-            let cur = queue.removeFirst()
+        while cursor < queue.count, seen < 6000 {
+            let cur = queue[cursor]
+            cursor += 1
             seen += 1
             if let dict = cur as? [String: Any] {
                 for (k, v) in dict {

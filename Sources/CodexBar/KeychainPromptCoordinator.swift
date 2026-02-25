@@ -3,7 +3,28 @@ import CodexBarCore
 import SweetCookieKit
 
 enum KeychainPromptCoordinator {
-    private static let promptLock = NSLock()
+    private actor KeychainPromptPresenter {
+        private var pending: [(title: String, message: String)] = []
+        private var presenting = false
+
+        func enqueue(title: String, message: String) async {
+            self.pending.append((title: title, message: message))
+            guard !self.presenting else { return }
+            self.presenting = true
+            defer { self.presenting = false }
+
+            while !self.pending.isEmpty {
+                let prompt = self.pending.removeFirst()
+                await MainActor.run {
+                    KeychainPromptCoordinator.presentModalAlert(
+                        title: prompt.title,
+                        message: prompt.message)
+                }
+            }
+        }
+    }
+
+    private static let promptPresenter = KeychainPromptPresenter()
     private static let log = CodexBarLog.logger(LogCategories.keychainPrompt)
 
     static func install() {
@@ -113,24 +134,13 @@ enum KeychainPromptCoordinator {
     }
 
     private static func presentAlert(title: String, message: String) {
-        self.promptLock.lock()
-        defer { self.promptLock.unlock() }
-
-        if Thread.isMainThread {
-            MainActor.assumeIsolated {
-                self.showAlert(title: title, message: message)
-            }
-            return
-        }
-        DispatchQueue.main.sync {
-            MainActor.assumeIsolated {
-                self.showAlert(title: title, message: message)
-            }
+        Task {
+            await self.promptPresenter.enqueue(title: title, message: message)
         }
     }
 
     @MainActor
-    private static func showAlert(title: String, message: String) {
+    private static func presentModalAlert(title: String, message: String) {
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message

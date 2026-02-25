@@ -45,6 +45,7 @@ public enum LogCategories {
     public static let openRouterUsage = "openrouter-usage"
     public static let providerDetection = "provider-detection"
     public static let providers = "providers"
+    public static let performance = "performance"
     public static let sessionQuota = "sessionQuota"
     public static let sessionQuotaNotifications = "sessionQuotaNotifications"
     public static let settings = "settings"

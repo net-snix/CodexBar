@@ -336,6 +336,7 @@ public struct TTYCommandRunner {
         let isCodexStatus = isCodex && trimmed == "/status"
 
         var buffer = Data()
+        let maxCapturedBytes = 2 * 1024 * 1024
         func readChunk() -> Data {
             var appended = Data()
             while true {
@@ -343,6 +344,14 @@ public struct TTYCommandRunner {
                 let n = read(primaryFD, &tmp, tmp.count)
                 if n > 0 {
                     let slice = tmp.prefix(n)
+                    if buffer.count + slice.count > maxCapturedBytes {
+                        let overflow = buffer.count + slice.count - maxCapturedBytes
+                        if overflow >= buffer.count {
+                            buffer.removeAll(keepingCapacity: true)
+                        } else {
+                            buffer.removeFirst(overflow)
+                        }
+                    }
                     buffer.append(contentsOf: slice)
                     appended.append(contentsOf: slice)
                     continue

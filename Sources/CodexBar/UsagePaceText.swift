@@ -19,8 +19,18 @@ enum UsagePaceText {
         return "Pace: \(detail.leftLabel)"
     }
 
-    static func weeklyDetail(provider: UsageProvider, window: RateWindow, now: Date = .init()) -> WeeklyDetail? {
-        guard let pace = weeklyPace(provider: provider, window: window, now: now) else { return nil }
+    static func weeklyDetail(
+        provider: UsageProvider,
+        window: RateWindow,
+        now: Date = .init(),
+        minimumExpectedPercent: Double = Self.minimumExpectedPercent) -> WeeklyDetail?
+    {
+        guard let pace = weeklyPace(
+            provider: provider,
+            window: window,
+            now: now,
+            minimumExpectedPercent: minimumExpectedPercent)
+        else { return nil }
         return WeeklyDetail(
             leftLabel: Self.detailLeftLabel(for: pace),
             rightLabel: Self.detailRightLabel(for: pace, now: now),
@@ -56,11 +66,16 @@ enum UsagePaceText {
         return countdown
     }
 
-    static func weeklyPace(provider: UsageProvider, window: RateWindow, now: Date) -> UsagePace? {
+    static func weeklyPace(
+        provider: UsageProvider,
+        window: RateWindow,
+        now: Date,
+        minimumExpectedPercent: Double = Self.minimumExpectedPercent) -> UsagePace?
+    {
         guard provider == .codex || provider == .claude else { return nil }
         guard window.remainingPercent > 0 else { return nil }
         guard let pace = UsagePace.weekly(window: window, now: now, defaultWindowMinutes: 10080) else { return nil }
-        guard pace.expectedUsedPercent >= Self.minimumExpectedPercent else { return nil }
+        guard pace.expectedUsedPercent >= minimumExpectedPercent else { return nil }
         return pace
     }
 }

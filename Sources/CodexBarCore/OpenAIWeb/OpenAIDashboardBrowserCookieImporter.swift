@@ -587,9 +587,11 @@ public struct OpenAIDashboardBrowserCookieImporter {
     private static func findFirstEmail(inJSONData data: Data) -> String? {
         guard let json = try? JSONSerialization.jsonObject(with: data, options: []) else { return nil }
         var queue: [Any] = [json]
+        var cursor = 0
         var seen = 0
-        while !queue.isEmpty, seen < 2000 {
-            let cur = queue.removeFirst()
+        while cursor < queue.count, seen < 2000 {
+            let cur = queue[cursor]
+            cursor += 1
             seen += 1
             if let str = cur as? String, str.contains("@") {
                 return str

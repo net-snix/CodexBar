@@ -389,12 +389,18 @@ struct MenuCardModelTests {
             hidePersonalInfo: false,
             now: now))
 
-        #expect(model.metrics.contains { $0.id == "spark-5h" && $0.title == "Session" && $0.sectionHeader == "Spark" })
-        #expect(model.metrics.contains { $0.id == "spark-7d" && $0.title == "Weekly" && $0.sectionHeader == nil })
+        #expect(model.metrics.contains {
+            $0.id == "spark-5h" && $0.title == "Spark Session" && $0.sectionHeader == nil
+        })
+        #expect(model.metrics.contains {
+            $0.id == "spark-7d" && $0.title == "Spark Weekly" && $0.sectionHeader == nil
+        })
         #expect(model.metrics.contains { $0.id == "spark-5h" && $0.percent == 64 })
         #expect(model.metrics.contains { $0.id == "spark-7d" && $0.percent == 56 })
         #expect(model.metrics.contains { $0.id == "spark-5h" && ($0.resetText?.contains("Resets in") == true) })
         #expect(model.metrics.contains { $0.id == "spark-7d" && ($0.resetText?.contains("Resets in") == true) })
+        #expect(model.metrics.contains { $0.id == "spark-7d" && ($0.detailLeftText?.contains("in reserve") == true) })
+        #expect(model.metrics.contains { $0.id == "spark-7d" && $0.detailRightText == "Lasts until reset" })
         #expect(model.metrics.contains { $0.title == "Code review" } == false)
     }
 

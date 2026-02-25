@@ -118,6 +118,16 @@ public struct OpenAIDashboardFetcher {
         var lastUsageBreakdownDebug: String?
         var lastCreditsPurchaseURL: String?
         var loginSignalFirstSeenAt: Date?
+        var cachedBodyText: String?
+        var cachedCodeReview: Double?
+        var cachedSparkRemaining: Double?
+        var cachedRateLimits: (primary: RateWindow?, secondary: RateWindow?) = (nil, nil)
+        var cachedCreditsRemaining: Double?
+        var cachedRows: [[String]] = []
+        var cachedEvents: [CreditEvent] = []
+        var cachedBreakdown: [OpenAIDashboardDailyBreakdown] = []
+        var cachedPlanHTML: String?
+        var cachedAccountPlan: String?
 
         while Date() < deadline {
             let scrape = try await self.scrape(webView: webView)
@@ -168,15 +178,63 @@ public struct OpenAIDashboardFetcher {
             }
 
             let bodyText = scrape.bodyText ?? ""
-            let codeReview = OpenAIDashboardParser.parseCodeReviewRemainingPercent(bodyText: bodyText)
-            let sparkRemaining = OpenAIDashboardParser.parseSparkRemainingPercent(bodyText: bodyText)
-            let events = OpenAIDashboardParser.parseCreditEvents(rows: scrape.rows)
-            let breakdown = OpenAIDashboardSnapshot.makeDailyBreakdown(from: events, maxDays: 30)
+            let codeReview: Double?
+            let sparkRemaining: Double?
+            let rateLimits: (primary: RateWindow?, secondary: RateWindow?)
+            let creditsRemaining: Double?
+            if let cachedBodyText, cachedBodyText == bodyText {
+                PerformanceProbe.count("openai_dashboard.parse.body_cache_hit")
+                codeReview = cachedCodeReview
+                sparkRemaining = cachedSparkRemaining
+                rateLimits = cachedRateLimits
+                creditsRemaining = cachedCreditsRemaining
+            } else {
+                PerformanceProbe.count("openai_dashboard.parse.body_cache_miss")
+                let parsedCodeReview = OpenAIDashboardParser.parseCodeReviewRemainingPercent(bodyText: bodyText)
+                let parsedSparkRemaining = OpenAIDashboardParser.parseSparkRemainingPercent(bodyText: bodyText)
+                let parsedRateLimits = OpenAIDashboardParser.parseRateLimits(bodyText: bodyText)
+                let parsedCreditsRemaining = OpenAIDashboardParser.parseCreditsRemaining(bodyText: bodyText)
+                cachedBodyText = bodyText
+                cachedCodeReview = parsedCodeReview
+                cachedSparkRemaining = parsedSparkRemaining
+                cachedRateLimits = parsedRateLimits
+                cachedCreditsRemaining = parsedCreditsRemaining
+                codeReview = parsedCodeReview
+                sparkRemaining = parsedSparkRemaining
+                rateLimits = parsedRateLimits
+                creditsRemaining = parsedCreditsRemaining
+            }
+
+            let events: [CreditEvent]
+            let breakdown: [OpenAIDashboardDailyBreakdown]
+            if cachedRows == scrape.rows {
+                PerformanceProbe.count("openai_dashboard.parse.rows_cache_hit")
+                events = cachedEvents
+                breakdown = cachedBreakdown
+            } else {
+                PerformanceProbe.count("openai_dashboard.parse.rows_cache_miss")
+                let parsedEvents = OpenAIDashboardParser.parseCreditEvents(rows: scrape.rows)
+                let parsedBreakdown = OpenAIDashboardSnapshot.makeDailyBreakdown(from: parsedEvents, maxDays: 30)
+                cachedRows = scrape.rows
+                cachedEvents = parsedEvents
+                cachedBreakdown = parsedBreakdown
+                events = parsedEvents
+                breakdown = parsedBreakdown
+            }
+
             let usageBreakdown = scrape.usageBreakdown
-            let rateLimits = OpenAIDashboardParser.parseRateLimits(bodyText: bodyText)
             let hasPrimaryLimit = rateLimits.primary != nil
-            let creditsRemaining = OpenAIDashboardParser.parseCreditsRemaining(bodyText: bodyText)
-            let accountPlan = scrape.bodyHTML.flatMap(OpenAIDashboardParser.parsePlanFromHTML)
+            let accountPlan: String?
+            if cachedPlanHTML == scrape.bodyHTML {
+                PerformanceProbe.count("openai_dashboard.parse.plan_cache_hit")
+                accountPlan = cachedAccountPlan
+            } else {
+                PerformanceProbe.count("openai_dashboard.parse.plan_cache_miss")
+                let parsedAccountPlan = scrape.bodyHTML.flatMap(OpenAIDashboardParser.parsePlanFromHTML)
+                cachedPlanHTML = scrape.bodyHTML
+                cachedAccountPlan = parsedAccountPlan
+                accountPlan = parsedAccountPlan
+            }
             let hasUsageLimits = rateLimits.primary != nil || rateLimits.secondary != nil
 
             if codeReview != nil, codeReviewFirstSeenAt == nil { codeReviewFirstSeenAt = Date() }

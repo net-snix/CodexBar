@@ -51,10 +51,9 @@ enum CostUsageJsonl {
             bytesRead += Int64(chunk.count)
             buffer.append(chunk)
 
-            while true {
-                guard let nl = buffer.firstIndex(of: 0x0A) else { break }
-                let linePart = buffer[..<nl]
-                buffer.removeSubrange(...nl)
+            var scanStart = buffer.startIndex
+            while let nl = buffer[scanStart...].firstIndex(of: 0x0A) {
+                let linePart = buffer[scanStart..<nl]
 
                 lineBytes += linePart.count
                 if !truncated {
@@ -66,6 +65,10 @@ enum CostUsageJsonl {
                     }
                 }
                 flushLine()
+                scanStart = buffer.index(after: nl)
+            }
+            if scanStart > buffer.startIndex {
+                buffer.removeSubrange(..<scanStart)
             }
         }
 
