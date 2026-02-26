@@ -161,9 +161,9 @@ struct StatusMenuTests {
         #expect(controller.shouldMergeIcons == (store.enabledProviders().count > 1))
 
         func hasOpenAIWebSubmenus(_ menu: NSMenu) -> Bool {
-            let usageItem = menu.items.first { ($0.representedObject as? String) == "menuCardUsage" }
+            let usageBreakdownItem = menu.items.first { $0.title == "Usage breakdown" }
             let creditsItem = menu.items.first { ($0.representedObject as? String) == "menuCardCredits" }
-            let hasUsageBreakdown = usageItem?.submenu?.items
+            let hasUsageBreakdown = usageBreakdownItem?.submenu?.items
                 .contains { ($0.representedObject as? String) == "usageBreakdownChart" } == true
             let hasCreditsHistory = creditsItem?.submenu?.items
                 .contains { ($0.representedObject as? String) == "creditsHistoryChart" } == true
@@ -326,9 +326,11 @@ struct StatusMenuTests {
         let menu = controller.makeMenu()
         controller.menuWillOpen(menu)
         let usageItem = menu.items.first { ($0.representedObject as? String) == "menuCardUsage" }
+        let usageBreakdownItem = menu.items.first { $0.title == "Usage breakdown" }
         let creditsItem = menu.items.first { ($0.representedObject as? String) == "menuCardCredits" }
+        #expect(usageItem?.submenu == nil)
         #expect(
-            usageItem?.submenu?.items
+            usageBreakdownItem?.submenu?.items
                 .contains { ($0.representedObject as? String) == "usageBreakdownChart" } == true)
         #expect(
             creditsItem?.submenu?.items

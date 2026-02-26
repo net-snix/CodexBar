@@ -343,11 +343,11 @@ extension StatusItemController {
         addedOpenAIWebItems: Bool)
     {
         guard context.hasOpenAIWebMenuItems else { return }
+        if context.hasUsageBreakdown {
+            _ = self.addUsageBreakdownSubmenu(to: menu)
+        }
         if !addedOpenAIWebItems {
             // Only show these when we actually have additional data.
-            if context.hasUsageBreakdown {
-                _ = self.addUsageBreakdownSubmenu(to: menu)
-            }
             if context.hasCreditsHistory {
                 _ = self.addCreditsHistorySubmenu(to: menu)
             }
@@ -713,8 +713,7 @@ extension StatusItemController {
                 width: width)
             let usageSubmenu = self.makeUsageSubmenu(
                 provider: provider,
-                snapshot: self.store.snapshot(for: provider),
-                webItems: webItems)
+                snapshot: self.store.snapshot(for: provider))
             menu.addItem(self.makeMenuCardItem(
                 usageView,
                 id: "menuCardUsage",
@@ -1012,12 +1011,8 @@ extension StatusItemController {
 
     private func makeUsageSubmenu(
         provider: UsageProvider,
-        snapshot: UsageSnapshot?,
-        webItems: OpenAIWebMenuItems) -> NSMenu?
+        snapshot: UsageSnapshot?) -> NSMenu?
     {
-        if provider == .codex, webItems.hasUsageBreakdown {
-            return self.makeUsageBreakdownSubmenu()
-        }
         if provider == .zai {
             return self.makeZaiUsageDetailsSubmenu(snapshot: snapshot)
         }
