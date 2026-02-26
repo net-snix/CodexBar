@@ -24,6 +24,7 @@ extension UsageStore {
         _ = self.isRefreshing
         _ = self.refreshingProviders
         _ = self.statuses
+        _ = self.historicalPaceRevision
         return 0
     }
 
@@ -50,6 +51,7 @@ extension UsageStore {
             _ = self.settings.refreshFrequency
             _ = self.settings.statusChecksEnabled
             _ = self.settings.costUsageEnabled
+            _ = self.settings.historicalTrackingEnabled
             _ = self.settings.configRevision
             for implementation in ProviderCatalog.all {
                 implementation.observeSettings(self.settings)
@@ -67,6 +69,7 @@ extension UsageStore {
                     self.invalidateProviderAvailabilityCache()
                     self.startTimer()
                     self.updateProviderRuntimes()
+                    await self.refreshHistoricalDatasetIfNeeded()
                     await self.refresh()
                 }
             }
@@ -109,6 +112,12 @@ extension UsageStore {
 
     func _setErrorForTesting(_ error: String?, provider: UsageProvider) {
         self.errors[provider] = error
+    }
+
+    func _setCodexHistoricalDatasetForTesting(_ dataset: CodexHistoricalDataset?, accountKey: String? = nil) {
+        self.codexHistoricalDataset = dataset
+        self.codexHistoricalDatasetAccountKey = accountKey
+        self.historicalPaceRevision += 1
     }
 
     func _setProviderAvailabilityCacheTTLForTesting(_ ttl: TimeInterval) {

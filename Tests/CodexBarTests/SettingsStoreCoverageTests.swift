@@ -47,6 +47,9 @@ struct SettingsStoreCoverageTests {
 
         settings.menuBarDisplayMode = .pace
         #expect(settings.menuBarDisplayMode == .pace)
+        #expect(settings.historicalTrackingEnabled == false)
+        settings.historicalTrackingEnabled = true
+        #expect(settings.historicalTrackingEnabled == true)
 
         settings.resetTimesShowAbsolute = true
         #expect(settings.resetTimeDisplayStyle == .absolute)

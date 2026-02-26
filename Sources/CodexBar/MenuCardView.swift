@@ -669,6 +669,7 @@ extension UsageMenuCardView.Model {
         let showCodexSparkUsage: Bool
         let showOptionalCreditsAndExtraUsage: Bool
         let hidePersonalInfo: Bool
+        let weeklyPace: UsagePace?
         let now: Date
         let refreshAction: (() -> Void)?
 
@@ -692,6 +693,7 @@ extension UsageMenuCardView.Model {
             showCodexSparkUsage: Bool = true,
             showOptionalCreditsAndExtraUsage: Bool,
             hidePersonalInfo: Bool,
+            weeklyPace: UsagePace? = nil,
             now: Date,
             refreshAction: (() -> Void)? = nil)
         {
@@ -714,6 +716,7 @@ extension UsageMenuCardView.Model {
             self.showCodexSparkUsage = showCodexSparkUsage
             self.showOptionalCreditsAndExtraUsage = showOptionalCreditsAndExtraUsage
             self.hidePersonalInfo = hidePersonalInfo
+            self.weeklyPace = weeklyPace
             self.now = now
             self.refreshAction = refreshAction
         }
@@ -899,6 +902,7 @@ extension UsageMenuCardView.Model {
                 provider: input.provider,
                 window: weekly,
                 now: input.now,
+                pace: input.weeklyPace,
                 showUsed: input.usageBarsShowUsed)
             var weeklyResetText = Self.resetText(for: weekly, style: input.resetTimeDisplayStyle, now: input.now)
             var weeklyDetailText: String? = input.provider == .zai ? zaiTimeDetail : nil
@@ -988,9 +992,9 @@ extension UsageMenuCardView.Model {
         }
         if let sparkSevenDayWindow {
             let sparkWeeklyPaceDetail = Self.weeklyPaceDetail(
-                provider: input.provider,
                 window: sparkSevenDayWindow,
                 now: input.now,
+                provider: input.provider,
                 showUsed: input.usageBarsShowUsed,
                 minimumExpectedPercent: 0)
             let sparkSevenDayPercent = input.usageBarsShowUsed
@@ -1058,15 +1062,20 @@ extension UsageMenuCardView.Model {
         provider: UsageProvider,
         window: RateWindow,
         now: Date,
+        pace: UsagePace? = nil,
         showUsed: Bool,
         minimumExpectedPercent: Double = 3) -> PaceDetail?
     {
-        guard let detail = UsagePaceText.weeklyDetail(
-            provider: provider,
-            window: window,
-            now: now,
-            minimumExpectedPercent: minimumExpectedPercent)
-        else { return nil }
+        let detail = if let pace {
+            UsagePaceText.weeklyDetail(pace: pace, now: now)
+        } else {
+            UsagePaceText.weeklyDetail(
+                provider: provider,
+                window: window,
+                now: now,
+                minimumExpectedPercent: minimumExpectedPercent)
+        }
+        guard let detail else { return nil }
         let expectedUsed = detail.expectedUsedPercent
         let actualUsed = window.usedPercent
         let expectedPercent = showUsed ? expectedUsed : (100 - expectedUsed)

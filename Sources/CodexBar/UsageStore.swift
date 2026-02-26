@@ -94,6 +94,7 @@ final class UsageStore {
     var pathDebugInfo: PathDebugSnapshot = .empty
     var statuses: [UsageProvider: ProviderStatus] = [:]
     var probeLogs: [UsageProvider: String] = [:]
+    var historicalPaceRevision: Int = 0
     @ObservationIgnored private var lastCreditsSnapshot: CreditsSnapshot?
     @ObservationIgnored private var creditsFailureStreak: Int = 0
     @ObservationIgnored var lastOpenAIDashboardSnapshot: OpenAIDashboardSnapshot?
@@ -132,6 +133,9 @@ final class UsageStore {
     @ObservationIgnored var cachedAccountInfoLoadedAt: Date?
     @ObservationIgnored var accountInfoRefreshTask: Task<Void, Never>?
     @ObservationIgnored let accountInfoCacheTTL: TimeInterval = 30
+    @ObservationIgnored let historicalUsageHistoryStore: HistoricalUsageHistoryStore
+    @ObservationIgnored var codexHistoricalDataset: CodexHistoricalDataset?
+    @ObservationIgnored var codexHistoricalDatasetAccountKey: String?
     @ObservationIgnored var lastKnownSessionRemaining: [UsageProvider: Double] = [:]
     @ObservationIgnored var lastTokenFetchAt: [UsageProvider: Date] = [:]
     @ObservationIgnored private var hasCompletedInitialRefresh: Bool = false
@@ -152,14 +156,16 @@ final class UsageStore {
         costUsageFetcher: CostUsageFetcher = CostUsageFetcher(),
         settings: SettingsStore,
         registry: ProviderRegistry = .shared,
+        historicalUsageHistoryStore: HistoricalUsageHistoryStore = HistoricalUsageHistoryStore(),
         sessionQuotaNotifier: SessionQuotaNotifier = SessionQuotaNotifier())
-    {
+{
         self.codexFetcher = fetcher
         self.browserDetection = browserDetection
         self.claudeFetcher = claudeFetcher ?? ClaudeUsageFetcher(browserDetection: browserDetection)
         self.costUsageFetcher = costUsageFetcher
         self.settings = settings
         self.registry = registry
+        self.historicalUsageHistoryStore = historicalUsageHistoryStore
         self.sessionQuotaNotifier = sessionQuotaNotifier
         self.providerMetadata = registry.metadata
         self
@@ -195,6 +201,9 @@ final class UsageStore {
             Task { @MainActor [weak self] in
                 self?.schedulePathDebugInfoRefresh()
             }
+        }
+        Task { @MainActor [weak self] in
+            await self?.refreshHistoricalDatasetIfNeeded()
         }
         Task { await self.refresh() }
         self.startTimer()
@@ -727,6 +736,7 @@ extension UsageStore {
                 OpenAIDashboardCacheStore.save(cache)
             }
         }
+        self.backfillCodexHistoricalFromDashboardIfNeeded(dash)
     }
 
     private func applyOpenAIDashboardFailure(message: String) async {

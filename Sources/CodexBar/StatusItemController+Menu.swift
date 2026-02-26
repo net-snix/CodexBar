@@ -1233,6 +1233,10 @@ extension StatusItemController {
             tokenError = nil
         }
 
+        let now = Date()
+        let weeklyPace = snapshot?.secondary.flatMap { window in
+            self.store.weeklyPace(provider: target, window: window, now: now)
+        }
         let input = UsageMenuCardView.Model.Input(
             provider: target,
             metadata: metadata,
@@ -1255,7 +1259,8 @@ extension StatusItemController {
             showCodexSparkUsage: self.settings.codexSparkUsageEnabled && self.store.isCodexProSubscriber(),
             showOptionalCreditsAndExtraUsage: self.settings.showOptionalCreditsAndExtraUsage,
             hidePersonalInfo: self.settings.hidePersonalInfo,
-            now: Date(),
+            weeklyPace: weeklyPace,
+            now: now,
             refreshAction: { [weak self] in
                 self?.refreshMenuProvider(target, forceTokenUsage: true)
             })
