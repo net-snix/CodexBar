@@ -1015,7 +1015,9 @@ extension StatusItemController {
         snapshot: UsageSnapshot?,
         webItems: OpenAIWebMenuItems) -> NSMenu?
     {
-        _ = webItems
+        if provider == .codex, webItems.hasUsageBreakdown {
+            return self.makeUsageBreakdownSubmenu()
+        }
         if provider == .zai {
             return self.makeZaiUsageDetailsSubmenu(snapshot: snapshot)
         }

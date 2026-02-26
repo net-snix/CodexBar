@@ -275,8 +275,8 @@ struct MenuCardModelTests {
 
         _ = try #require(model.metrics.firstIndex { $0.title == "Code review" })
         let sparkIndex = try #require(model.metrics.firstIndex { $0.id == "spark" })
-        #expect(model.metrics[sparkIndex].sectionHeader == "Spark")
-        #expect(model.metrics[sparkIndex].title == "Session")
+        #expect(model.metrics[sparkIndex].sectionHeader == nil)
+        #expect(model.metrics[sparkIndex].title == "Spark Session")
         #expect(model.metrics[sparkIndex].percent == 41)
     }
 
