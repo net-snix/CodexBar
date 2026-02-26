@@ -23,6 +23,7 @@ read_when:
 - Codex-only: Credits + “Buy Credits…” in-card action.
 - Cost section includes an in-card refresh button (same behavior as menu “Refresh”) for usage + token-cost refresh.
 - OpenAI web extras: dedicated `Usage breakdown` submenu item (not on usage-bar hover) + credits history source.
+  Usage breakdown bar heights follow OpenAI dashboard values; hover details show per-day service share percentages.
 - Code review appears only when Providers → Codex → "Show Code review usage" is enabled.
 - Spark appears only when Providers → Codex → "Show Codex Spark usage" is enabled.
   When OAuth provides Spark windows, the card shows `Spark Session` (5h) and `Spark Weekly` (7d) rows plus reset

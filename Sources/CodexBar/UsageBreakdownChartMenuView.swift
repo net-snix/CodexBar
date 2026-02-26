@@ -42,14 +42,6 @@ struct UsageBreakdownChartMenuView: View {
                             y: .value("Credits used", point.creditsUsed))
                             .foregroundStyle(by: .value("Service", point.service))
                     }
-                    if let peak = model.peakPoint {
-                        let capStart = max(peak.creditsUsed - Self.capHeight(maxValue: model.maxCreditsUsed), 0)
-                        BarMark(
-                            x: .value("Day", peak.date, unit: .day),
-                            yStart: .value("Cap start", capStart),
-                            yEnd: .value("Cap end", peak.creditsUsed))
-                            .foregroundStyle(Color(nsColor: .systemYellow))
-                    }
                 }
                 .chartForegroundStyleScale(domain: model.services, range: model.serviceColors)
                 .chartYAxis(.hidden)
@@ -129,11 +121,9 @@ struct UsageBreakdownChartMenuView: View {
         let breakdownByDayKey: [String: OpenAIDashboardDailyBreakdown]
         let dayDates: [(dayKey: String, date: Date)]
         let selectableDayDates: [(dayKey: String, date: Date)]
-        let peakPoint: (date: Date, creditsUsed: Double)?
         let services: [String]
         let serviceColors: [Color]
         let axisDates: [Date]
-        let maxCreditsUsed: Double
 
         func color(for service: String) -> Color {
             guard let idx = self.services.firstIndex(of: service), idx < self.serviceColors.count else {
@@ -161,28 +151,19 @@ struct UsageBreakdownChartMenuView: View {
         var selectableDayDates: [(dayKey: String, date: Date)] = []
         selectableDayDates.reserveCapacity(sorted.count)
 
-        var peak: (date: Date, creditsUsed: Double)?
-        var maxCreditsUsed: Double = 0
-
         for day in sorted {
             guard let date = self.dateFromDayKey(day.day) else { continue }
             breakdownByDayKey[day.day] = day
             dayDates.append((dayKey: day.day, date: date))
-            if day.totalCreditsUsed > 0 {
-                if let cur = peak {
-                    if day.totalCreditsUsed > cur.creditsUsed { peak = (date, day.totalCreditsUsed) }
-                } else {
-                    peak = (date, day.totalCreditsUsed)
-                }
-                maxCreditsUsed = max(maxCreditsUsed, day.totalCreditsUsed)
-            }
-            var addedSelectable = false
-            for service in day.services where service.creditsUsed > 0 {
-                points.append(Point(date: date, service: service.service, creditsUsed: service.creditsUsed))
-                if !addedSelectable {
-                    selectableDayDates.append((dayKey: day.day, date: date))
-                    addedSelectable = true
-                }
+            let serviceTotals = Self.normalizedServiceTotals(for: day)
+            let totalCreditsUsed = serviceTotals.values.reduce(0, +)
+            guard totalCreditsUsed > 0 else { continue }
+            selectableDayDates.append((dayKey: day.day, date: date))
+            for serviceTotal in serviceTotals.sorted(by: { $0.key < $1.key }) where serviceTotal.value > 0 {
+                points.append(Point(
+                    date: date,
+                    service: serviceTotal.key,
+                    creditsUsed: serviceTotal.value))
             }
         }
 
@@ -195,22 +176,16 @@ struct UsageBreakdownChartMenuView: View {
             breakdownByDayKey: breakdownByDayKey,
             dayDates: dayDates,
             selectableDayDates: selectableDayDates,
-            peakPoint: peak,
             services: services,
             serviceColors: colors,
-            axisDates: axisDates,
-            maxCreditsUsed: maxCreditsUsed)
-    }
-
-    private static func capHeight(maxValue: Double) -> Double {
-        maxValue * 0.05
+            axisDates: axisDates)
     }
 
     private static func serviceOrder(from breakdown: [OpenAIDashboardDailyBreakdown]) -> [String] {
         var totals: [String: Double] = [:]
         for day in breakdown {
-            for service in day.services {
-                totals[service.service, default: 0] += service.creditsUsed
+            for serviceTotal in self.normalizedServiceTotals(for: day) {
+                totals[serviceTotal.key, default: 0] += serviceTotal.value
             }
         }
 
@@ -222,13 +197,76 @@ struct UsageBreakdownChartMenuView: View {
             .map(\.key)
     }
 
-    private static func colorForService(_ service: String) -> Color {
-        let lower = service.lowercased()
+    nonisolated static func displayServiceName(_ rawService: String) -> String {
+        let trimmed = rawService.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Other" }
+        let lower = trimmed.lowercased()
+
+        if lower == "unknown" || lower == "other" || lower.contains("unknown") {
+            return "Other"
+        }
         if lower == "cli" {
-            return Color(red: 0.26, green: 0.55, blue: 0.96)
+            return "CLI"
+        }
+        if lower == "sdk" {
+            return "SDK"
+        }
+        if lower.contains("desktop"), lower.contains("app") {
+            return "Desktop App"
+        }
+        return trimmed
+    }
+
+    nonisolated static func serviceRGB(for service: String) -> (red: Double, green: Double, blue: Double)? {
+        let display = self.displayServiceName(service)
+        let lower = display.lowercased()
+        if lower == "desktop app" {
+            return (red: 0.88, green: 0.24, blue: 0.22)
+        }
+        if lower == "sdk" {
+            return (red: 0.35, green: 0.43, blue: 0.27)
+        }
+        if lower == "cli" {
+            return (red: 0.92, green: 0.40, blue: 0.69)
+        }
+        if lower == "other" {
+            return (red: 0.57, green: 0.57, blue: 0.60)
         }
         if lower.contains("github"), lower.contains("review") {
-            return Color(red: 0.94, green: 0.53, blue: 0.18)
+            return (red: 0.94, green: 0.53, blue: 0.18)
+        }
+        return nil
+    }
+
+    nonisolated static func normalizedServiceShares(
+        for day: OpenAIDashboardDailyBreakdown) -> [(service: String, percent: Double)]
+    {
+        let totals = self.normalizedServiceTotals(for: day)
+        let totalUsed = totals.values.reduce(0, +)
+        guard totalUsed > 0 else { return [] }
+        return totals
+            .map { key, value in
+                (service: key, percent: (value / totalUsed) * 100)
+            }
+            .sorted { lhs, rhs in
+                if lhs.percent == rhs.percent { return lhs.service < rhs.service }
+                return lhs.percent > rhs.percent
+            }
+    }
+
+    private nonisolated static func normalizedServiceTotals(
+        for day: OpenAIDashboardDailyBreakdown) -> [String: Double]
+    {
+        var totals: [String: Double] = [:]
+        for service in day.services where service.creditsUsed > 0 {
+            totals[self.displayServiceName(service.service), default: 0] += service.creditsUsed
+        }
+        return totals
+    }
+
+    private static func colorForService(_ service: String) -> Color {
+        if let rgb = self.serviceRGB(for: service) {
+            return Color(red: rgb.red, green: rgb.green, blue: rgb.blue)
         }
         let palette: [Color] = [
             Color(red: 0.46, green: 0.75, blue: 0.36),
@@ -366,24 +404,24 @@ struct UsageBreakdownChartMenuView: View {
         }
 
         let dayLabel = date.formatted(.dateTime.month(.abbreviated).day())
-        let total = day.totalCreditsUsed.formatted(.number.precision(.fractionLength(0...2)))
-        if day.services.isEmpty {
-            return ("\(dayLabel): \(total)", nil)
+        let shares = Self.normalizedServiceShares(for: day)
+        if shares.isEmpty {
+            return ("\(dayLabel): 0%", nil)
         }
-        if day.services.count <= 1, let first = day.services.first {
-            let used = first.creditsUsed.formatted(.number.precision(.fractionLength(0...2)))
-            return ("\(dayLabel): \(used)", first.service)
+        if shares.count == 1, let first = shares.first {
+            return ("\(dayLabel): \(Self.percentString(first.percent))", first.service)
         }
 
-        let services = day.services
-            .sorted { lhs, rhs in
-                if lhs.creditsUsed == rhs.creditsUsed { return lhs.service < rhs.service }
-                return lhs.creditsUsed > rhs.creditsUsed
-            }
+        let services = shares
             .prefix(3)
-            .map { "\($0.service) \($0.creditsUsed.formatted(.number.precision(.fractionLength(0...2))))" }
+            .map { "\($0.service) \(Self.percentString($0.percent))" }
             .joined(separator: " · ")
+        let totalPercent = shares.reduce(0.0) { $0 + $1.percent }
+        return ("\(dayLabel): \(Self.percentString(totalPercent))", services)
+    }
 
-        return ("\(dayLabel): \(total)", services)
+    private nonisolated static func percentString(_ percent: Double) -> String {
+        let clamped = max(0, min(100, percent))
+        return (clamped / 100).formatted(.percent.precision(.fractionLength(0...1)))
     }
 }
