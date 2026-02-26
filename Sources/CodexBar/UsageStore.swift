@@ -663,34 +663,6 @@ final class UsageStore {
         self.sessionQuotaNotifier.post(transition: transition, provider: provider)
     }
 
-    private func refreshStatus(_ provider: UsageProvider) async {
-        guard self.settings.statusChecksEnabled else { return }
-        guard self.isEnabled(provider) else { return }
-        guard let meta = self.providerMetadata[provider] else { return }
-
-        do {
-            let status: ProviderStatus
-            if let urlString = meta.statusPageURL, let baseURL = URL(string: urlString) {
-                status = try await Self.fetchStatus(from: baseURL)
-            } else if let productID = meta.statusWorkspaceProductID {
-                status = try await Self.fetchWorkspaceStatus(productID: productID)
-            } else {
-                return
-            }
-            await MainActor.run { self.statuses[provider] = status }
-        } catch {
-            // Keep the previous status to avoid flapping when the API hiccups.
-            await MainActor.run {
-                if self.statuses[provider] == nil {
-                    self.statuses[provider] = ProviderStatus(
-                        indicator: .unknown,
-                        description: error.localizedDescription,
-                        updatedAt: nil)
-                }
-            }
-        }
-    }
-
     func applyCodexCredits(_ credits: CreditsSnapshot?) {
         if let credits {
             self.credits = credits
@@ -707,25 +679,6 @@ final class UsageStore {
 }
 
 extension UsageStore {
-    private static let openAIWebRefreshMultiplier: TimeInterval = 5
-    private static let openAIWebPrimaryFetchTimeout: TimeInterval = 15
-    private static let openAIWebRetryFetchTimeout: TimeInterval = 8
-
-    private func openAIWebRefreshIntervalSeconds() -> TimeInterval {
-        let base = max(self.settings.refreshFrequency.seconds ?? 0, 120)
-        return base * Self.openAIWebRefreshMultiplier
-    }
-
-    func requestOpenAIDashboardRefreshIfStale(reason: String) {
-        guard self.isEnabled(.codex), self.settings.codexCookieSource.isEnabled else { return }
-        let now = Date()
-        let refreshInterval = self.openAIWebRefreshIntervalSeconds()
-        let lastUpdatedAt = self.openAIDashboard?.updatedAt ?? self.lastOpenAIDashboardSnapshot?.updatedAt
-        if let lastUpdatedAt, now.timeIntervalSince(lastUpdatedAt) < refreshInterval { return }
-        let stamp = now.formatted(date: .abbreviated, time: .shortened)
-        self.logOpenAIWeb("[\(stamp)] OpenAI web refresh request: \(reason)")
-        Task { await self.refreshOpenAIDashboardIfNeeded(force: true) }
-    }
     private func applyOpenAIDashboard(_ dash: OpenAIDashboardSnapshot, targetEmail: String?) async {
         await MainActor.run {
             self.openAIDashboard = dash

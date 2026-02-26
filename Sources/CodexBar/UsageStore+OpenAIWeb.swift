@@ -4,6 +4,8 @@ import Foundation
 
 extension UsageStore {
     static let openAIWebRefreshMultiplier: TimeInterval = 5
+    static let openAIWebPrimaryFetchTimeout: TimeInterval = 15
+    static let openAIWebRetryFetchTimeout: TimeInterval = 8
 
     func openAIWebRefreshIntervalSeconds() -> TimeInterval {
         let base = max(self.settings.refreshFrequency.seconds ?? 0, 120)
