@@ -100,14 +100,7 @@ public struct OpenAIDashboardFetcher {
             timeout: timeout)
     }
 
-    private func pollLatestDashboard(
-        webView: WKWebView,
-        log: (String) -> Void,
-        debugDumpHTML: Bool,
-        requirePrimaryUsageLimit: Bool,
-        timeout: TimeInterval) async throws -> OpenAIDashboardSnapshot
-    {
-        let deadline = Date().addingTimeInterval(timeout)
+    private struct PollState {
         var lastBody: String?
         var lastHTML: String?
         var lastHref: String?
@@ -118,34 +111,55 @@ public struct OpenAIDashboardFetcher {
         var lastUsageBreakdownDebug: String?
         var lastCreditsPurchaseURL: String?
         var loginSignalFirstSeenAt: Date?
-        var cachedBodyText: String?
-        var cachedCodeReview: Double?
-        var cachedSparkRemaining: Double?
-        var cachedRateLimits: (primary: RateWindow?, secondary: RateWindow?) = (nil, nil)
-        var cachedCreditsRemaining: Double?
-        var cachedRows: [[String]] = []
-        var cachedEvents: [CreditEvent] = []
-        var cachedBreakdown: [OpenAIDashboardDailyBreakdown] = []
-        var cachedPlanHTML: String?
-        var cachedAccountPlan: String?
+        var cache = PollCache()
+    }
+
+    private struct PollCache {
+        var bodyText: String?
+        var codeReview: Double?
+        var sparkRemaining: Double?
+        var rateLimits: (primary: RateWindow?, secondary: RateWindow?) = (nil, nil)
+        var creditsRemaining: Double?
+        var rows: [[String]] = []
+        var events: [CreditEvent] = []
+        var breakdown: [OpenAIDashboardDailyBreakdown] = []
+        var planHTML: String?
+        var accountPlan: String?
+    }
+
+    private struct BodyMetrics {
+        let codeReview: Double?
+        let sparkRemaining: Double?
+        let rateLimits: (primary: RateWindow?, secondary: RateWindow?)
+        let creditsRemaining: Double?
+    }
+
+    private struct CreditMetrics {
+        let events: [CreditEvent]
+        let breakdown: [OpenAIDashboardDailyBreakdown]
+    }
+
+    private struct PollEvaluation {
+        let scrape: ScrapeResult
+        let bodyMetrics: BodyMetrics
+        let usageBreakdown: [OpenAIDashboardDailyBreakdown]
+        let hasUsageLimits: Bool
+        let events: [CreditEvent]
+    }
+
+    private func pollLatestDashboard(
+        webView: WKWebView,
+        log: (String) -> Void,
+        debugDumpHTML: Bool,
+        requirePrimaryUsageLimit: Bool,
+        timeout: TimeInterval) async throws -> OpenAIDashboardSnapshot
+    {
+        let deadline = Date().addingTimeInterval(timeout)
+        var state = PollState()
 
         while Date() < deadline {
             let scrape = try await self.scrape(webView: webView)
-            lastBody = scrape.bodyText ?? lastBody
-            lastHTML = scrape.bodyHTML ?? lastHTML
-
-            if scrape.href != lastHref
-                || lastFlags?.loginRequired != scrape.loginRequired
-                || lastFlags?.workspacePicker != scrape.workspacePicker
-                || lastFlags?.cloudflare != scrape.cloudflareInterstitial
-            {
-                lastHref = scrape.href
-                lastFlags = (scrape.loginRequired, scrape.workspacePicker, scrape.cloudflareInterstitial)
-                let href = scrape.href ?? "nil"
-                log(
-                    "href=\(href) login=\(scrape.loginRequired) " +
-                        "workspace=\(scrape.workspacePicker) cloudflare=\(scrape.cloudflareInterstitial)")
-            }
+            self.recordScrape(scrape, state: &state, log: log)
 
             if scrape.workspacePicker {
                 try? await Task.sleep(for: .milliseconds(500))
@@ -157,175 +171,308 @@ public struct OpenAIDashboardFetcher {
                 webView: webView,
                 log: log,
                 debugDumpHTML: debugDumpHTML,
-                loginSignalFirstSeenAt: &loginSignalFirstSeenAt)
+                loginSignalFirstSeenAt: &state.loginSignalFirstSeenAt)
             {
                 continue
             }
-            loginSignalFirstSeenAt = nil
+            state.loginSignalFirstSeenAt = nil
 
-            if scrape.cloudflareInterstitial {
-                if debugDumpHTML, let html = scrape.bodyHTML {
-                    Self.writeDebugArtifacts(html: html, bodyText: scrape.bodyText, logger: log)
-                }
-                throw FetchError.noDashboardData(body: "Cloudflare challenge detected in WebView.")
-            }
+            try self.throwIfCloudflare(scrape, debugDumpHTML: debugDumpHTML, log: log)
 
-            // The page is a SPA and can land on ChatGPT UI or other routes; keep forcing the usage URL.
-            if let href = scrape.href, !href.contains("/codex/settings/usage") {
+            if self.needsUsagePageReload(href: scrape.href) {
                 _ = webView.load(URLRequest(url: self.usageURL))
                 try? await Task.sleep(for: .milliseconds(500))
                 continue
             }
 
-            let bodyText = scrape.bodyText ?? ""
-            let codeReview: Double?
-            let sparkRemaining: Double?
-            let rateLimits: (primary: RateWindow?, secondary: RateWindow?)
-            let creditsRemaining: Double?
-            if let cachedBodyText, cachedBodyText == bodyText {
-                PerformanceProbe.count("openai_dashboard.parse.body_cache_hit")
-                codeReview = cachedCodeReview
-                sparkRemaining = cachedSparkRemaining
-                rateLimits = cachedRateLimits
-                creditsRemaining = cachedCreditsRemaining
-            } else {
-                PerformanceProbe.count("openai_dashboard.parse.body_cache_miss")
-                let parsedCodeReview = OpenAIDashboardParser.parseCodeReviewRemainingPercent(bodyText: bodyText)
-                let parsedSparkRemaining = OpenAIDashboardParser.parseSparkRemainingPercent(bodyText: bodyText)
-                let parsedRateLimits = OpenAIDashboardParser.parseRateLimits(bodyText: bodyText)
-                let parsedCreditsRemaining = OpenAIDashboardParser.parseCreditsRemaining(bodyText: bodyText)
-                cachedBodyText = bodyText
-                cachedCodeReview = parsedCodeReview
-                cachedSparkRemaining = parsedSparkRemaining
-                cachedRateLimits = parsedRateLimits
-                cachedCreditsRemaining = parsedCreditsRemaining
-                codeReview = parsedCodeReview
-                sparkRemaining = parsedSparkRemaining
-                rateLimits = parsedRateLimits
-                creditsRemaining = parsedCreditsRemaining
-            }
-
-            let events: [CreditEvent]
-            let breakdown: [OpenAIDashboardDailyBreakdown]
-            if cachedRows == scrape.rows {
-                PerformanceProbe.count("openai_dashboard.parse.rows_cache_hit")
-                events = cachedEvents
-                breakdown = cachedBreakdown
-            } else {
-                PerformanceProbe.count("openai_dashboard.parse.rows_cache_miss")
-                let parsedEvents = OpenAIDashboardParser.parseCreditEvents(rows: scrape.rows)
-                let parsedBreakdown = OpenAIDashboardSnapshot.makeDailyBreakdown(from: parsedEvents, maxDays: 30)
-                cachedRows = scrape.rows
-                cachedEvents = parsedEvents
-                cachedBreakdown = parsedBreakdown
-                events = parsedEvents
-                breakdown = parsedBreakdown
-            }
-
+            let bodyMetrics = self.parseBodyMetrics(bodyText: scrape.bodyText ?? "", state: &state)
+            let creditMetrics = self.parseCreditMetrics(rows: scrape.rows, state: &state)
             let usageBreakdown = scrape.usageBreakdown
-            let hasPrimaryLimit = rateLimits.primary != nil
-            let accountPlan: String?
-            if cachedPlanHTML == scrape.bodyHTML {
-                PerformanceProbe.count("openai_dashboard.parse.plan_cache_hit")
-                accountPlan = cachedAccountPlan
-            } else {
-                PerformanceProbe.count("openai_dashboard.parse.plan_cache_miss")
-                let parsedAccountPlan = scrape.bodyHTML.flatMap(OpenAIDashboardParser.parsePlanFromHTML)
-                cachedPlanHTML = scrape.bodyHTML
-                cachedAccountPlan = parsedAccountPlan
-                accountPlan = parsedAccountPlan
-            }
-            let hasUsageLimits = rateLimits.primary != nil || rateLimits.secondary != nil
+            let hasPrimaryLimit = bodyMetrics.rateLimits.primary != nil
+            let hasUsageLimits = hasPrimaryLimit || bodyMetrics.rateLimits.secondary != nil
+            let accountPlan = self.parseAccountPlan(bodyHTML: scrape.bodyHTML, state: &state)
+            let evaluation = PollEvaluation(
+                scrape: scrape,
+                bodyMetrics: bodyMetrics,
+                usageBreakdown: usageBreakdown,
+                hasUsageLimits: hasUsageLimits,
+                events: creditMetrics.events)
 
-            if codeReview != nil, codeReviewFirstSeenAt == nil { codeReviewFirstSeenAt = Date() }
-            if anyDashboardSignalAt == nil,
-               codeReview != nil || sparkRemaining != nil || !usageBreakdown.isEmpty || scrape.creditsHeaderPresent ||
-               hasUsageLimits || creditsRemaining != nil
-            {
-                anyDashboardSignalAt = Date()
-            }
-            if codeReview != nil, usageBreakdown.isEmpty,
-               let debug = scrape.usageBreakdownDebug, !debug.isEmpty,
-               debug != lastUsageBreakdownDebug
-            {
-                lastUsageBreakdownDebug = debug
-                log("usage breakdown debug: \(debug)")
-            }
-            if let purchaseURL = scrape.creditsPurchaseURL, purchaseURL != lastCreditsPurchaseURL {
-                lastCreditsPurchaseURL = purchaseURL
-                log("credits purchase url: \(purchaseURL)")
-            }
-            if events.isEmpty,
-               codeReview != nil || sparkRemaining != nil || !usageBreakdown.isEmpty ||
-               hasUsageLimits || creditsRemaining != nil
-            {
-                log(
-                    "credits header present=\(scrape.creditsHeaderPresent) " +
-                        "inViewport=\(scrape.creditsHeaderInViewport) didScroll=\(scrape.didScrollToCredits) " +
-                        "rows=\(scrape.rows.count)")
-                if scrape.didScrollToCredits {
-                    log("scrollIntoView(Credits usage history) requested; waiting…")
-                    try? await Task.sleep(for: .milliseconds(600))
-                    continue
-                }
+            self.recordDashboardSignals(
+                evaluation: evaluation,
+                state: &state,
+                log: log)
 
-                // Avoid returning early when the usage breakdown chart hydrates before the (often virtualized)
-                // credits table. When we detect a dashboard signal, give credits history a moment to appear.
-                if scrape.creditsHeaderPresent, scrape.creditsHeaderInViewport, creditsHeaderVisibleAt == nil {
-                    creditsHeaderVisibleAt = Date()
-                }
-                if Self.shouldWaitForCreditsHistory(.init(
-                    now: Date(),
-                    anyDashboardSignalAt: anyDashboardSignalAt,
-                    creditsHeaderVisibleAt: creditsHeaderVisibleAt,
-                    creditsHeaderPresent: scrape.creditsHeaderPresent,
-                    creditsHeaderInViewport: scrape.creditsHeaderInViewport,
-                    didScrollToCredits: scrape.didScrollToCredits))
-                {
-                    try? await Task.sleep(for: .milliseconds(400))
-                    continue
-                }
+            if self.shouldWaitForCreditsHistoryRows(
+                evaluation: evaluation,
+                state: &state,
+                log: log)
+            {
+                try? await Task.sleep(for: .milliseconds(400))
+                continue
             }
 
-            if codeReview != nil || sparkRemaining != nil || !events.isEmpty || !usageBreakdown
-                .isEmpty || hasUsageLimits || creditsRemaining != nil
+            if self.hasDashboardData(
+                bodyMetrics: bodyMetrics,
+                usageBreakdown: usageBreakdown,
+                events: creditMetrics.events,
+                hasUsageLimits: hasUsageLimits)
             {
                 if requirePrimaryUsageLimit, !hasPrimaryLimit {
                     try? await Task.sleep(for: .milliseconds(400))
                     continue
                 }
 
-                // The usage breakdown chart is hydrated asynchronously. When code review is already present,
-                // give it a moment to populate so the menu can show it.
-                if codeReview != nil, usageBreakdown.isEmpty {
-                    let elapsed = Date().timeIntervalSince(codeReviewFirstSeenAt ?? Date())
-                    if elapsed < 6 {
-                        try? await Task.sleep(for: .milliseconds(400))
-                        continue
-                    }
-                }
-                return OpenAIDashboardSnapshot(
-                    signedInEmail: scrape.signedInEmail,
-                    codeReviewRemainingPercent: codeReview,
-                    sparkRemainingPercent: sparkRemaining,
-                    creditEvents: events,
-                    dailyBreakdown: breakdown,
+                if self.shouldWaitForUsageBreakdown(
+                    codeReview: bodyMetrics.codeReview,
                     usageBreakdown: usageBreakdown,
-                    creditsPurchaseURL: scrape.creditsPurchaseURL,
-                    primaryLimit: rateLimits.primary,
-                    secondaryLimit: rateLimits.secondary,
-                    creditsRemaining: creditsRemaining,
-                    accountPlan: accountPlan,
-                    updatedAt: Date())
+                    codeReviewFirstSeenAt: state.codeReviewFirstSeenAt)
+                {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    continue
+                }
+
+                return self.makeSnapshot(
+                    scrape: scrape,
+                    bodyMetrics: bodyMetrics,
+                    creditMetrics: creditMetrics,
+                    usageBreakdown: usageBreakdown,
+                    accountPlan: accountPlan)
             }
 
             try? await Task.sleep(for: .milliseconds(500))
         }
 
-        if debugDumpHTML, let html = lastHTML {
-            Self.writeDebugArtifacts(html: html, bodyText: lastBody, logger: log)
+        if debugDumpHTML, let html = state.lastHTML {
+            Self.writeDebugArtifacts(html: html, bodyText: state.lastBody, logger: log)
         }
-        throw FetchError.noDashboardData(body: lastBody ?? "")
+        throw FetchError.noDashboardData(body: state.lastBody ?? "")
+    }
+
+    private func recordScrape(_ scrape: ScrapeResult, state: inout PollState, log: (String) -> Void) {
+        state.lastBody = scrape.bodyText ?? state.lastBody
+        state.lastHTML = scrape.bodyHTML ?? state.lastHTML
+
+        if scrape.href != state.lastHref
+            || state.lastFlags?.loginRequired != scrape.loginRequired
+            || state.lastFlags?.workspacePicker != scrape.workspacePicker
+            || state.lastFlags?.cloudflare != scrape.cloudflareInterstitial
+        {
+            state.lastHref = scrape.href
+            state.lastFlags = (scrape.loginRequired, scrape.workspacePicker, scrape.cloudflareInterstitial)
+            let href = scrape.href ?? "nil"
+            log(
+                "href=\(href) login=\(scrape.loginRequired) " +
+                    "workspace=\(scrape.workspacePicker) cloudflare=\(scrape.cloudflareInterstitial)")
+        }
+    }
+
+    private func throwIfCloudflare(
+        _ scrape: ScrapeResult,
+        debugDumpHTML: Bool,
+        log: (String) -> Void) throws
+    {
+        guard scrape.cloudflareInterstitial else { return }
+        if debugDumpHTML, let html = scrape.bodyHTML {
+            Self.writeDebugArtifacts(html: html, bodyText: scrape.bodyText, logger: log)
+        }
+        throw FetchError.noDashboardData(body: "Cloudflare challenge detected in WebView.")
+    }
+
+    private func needsUsagePageReload(href: String?) -> Bool {
+        guard let href else { return false }
+        return !href.contains("/codex/settings/usage")
+    }
+
+    private func parseBodyMetrics(bodyText: String, state: inout PollState) -> BodyMetrics {
+        if let cachedBodyText = state.cache.bodyText, cachedBodyText == bodyText {
+            PerformanceProbe.count("openai_dashboard.parse.body_cache_hit")
+            return BodyMetrics(
+                codeReview: state.cache.codeReview,
+                sparkRemaining: state.cache.sparkRemaining,
+                rateLimits: state.cache.rateLimits,
+                creditsRemaining: state.cache.creditsRemaining)
+        }
+
+        PerformanceProbe.count("openai_dashboard.parse.body_cache_miss")
+        let parsedCodeReview = OpenAIDashboardParser.parseCodeReviewRemainingPercent(bodyText: bodyText)
+        let parsedSparkRemaining = OpenAIDashboardParser.parseSparkRemainingPercent(bodyText: bodyText)
+        let parsedRateLimits = OpenAIDashboardParser.parseRateLimits(bodyText: bodyText)
+        let parsedCreditsRemaining = OpenAIDashboardParser.parseCreditsRemaining(bodyText: bodyText)
+
+        state.cache.bodyText = bodyText
+        state.cache.codeReview = parsedCodeReview
+        state.cache.sparkRemaining = parsedSparkRemaining
+        state.cache.rateLimits = parsedRateLimits
+        state.cache.creditsRemaining = parsedCreditsRemaining
+
+        return BodyMetrics(
+            codeReview: parsedCodeReview,
+            sparkRemaining: parsedSparkRemaining,
+            rateLimits: parsedRateLimits,
+            creditsRemaining: parsedCreditsRemaining)
+    }
+
+    private func parseCreditMetrics(rows: [[String]], state: inout PollState) -> CreditMetrics {
+        if state.cache.rows == rows {
+            PerformanceProbe.count("openai_dashboard.parse.rows_cache_hit")
+            return CreditMetrics(events: state.cache.events, breakdown: state.cache.breakdown)
+        }
+
+        PerformanceProbe.count("openai_dashboard.parse.rows_cache_miss")
+        let parsedEvents = OpenAIDashboardParser.parseCreditEvents(rows: rows)
+        let parsedBreakdown = OpenAIDashboardSnapshot.makeDailyBreakdown(from: parsedEvents, maxDays: 30)
+        state.cache.rows = rows
+        state.cache.events = parsedEvents
+        state.cache.breakdown = parsedBreakdown
+        return CreditMetrics(events: parsedEvents, breakdown: parsedBreakdown)
+    }
+
+    private func parseAccountPlan(bodyHTML: String?, state: inout PollState) -> String? {
+        if state.cache.planHTML == bodyHTML {
+            PerformanceProbe.count("openai_dashboard.parse.plan_cache_hit")
+            return state.cache.accountPlan
+        }
+
+        PerformanceProbe.count("openai_dashboard.parse.plan_cache_miss")
+        let parsedAccountPlan = bodyHTML.flatMap(OpenAIDashboardParser.parsePlanFromHTML)
+        state.cache.planHTML = bodyHTML
+        state.cache.accountPlan = parsedAccountPlan
+        return parsedAccountPlan
+    }
+
+    private func recordDashboardSignals(
+        evaluation: PollEvaluation,
+        state: inout PollState,
+        log: (String) -> Void)
+    {
+        let now = Date()
+        if evaluation.bodyMetrics.codeReview != nil, state.codeReviewFirstSeenAt == nil {
+            state.codeReviewFirstSeenAt = now
+        }
+
+        if state.anyDashboardSignalAt == nil,
+           self.hasDashboardSignal(
+               bodyMetrics: evaluation.bodyMetrics,
+               usageBreakdown: evaluation.usageBreakdown,
+               creditsHeaderPresent: evaluation.scrape.creditsHeaderPresent,
+               hasUsageLimits: evaluation.hasUsageLimits)
+        {
+            state.anyDashboardSignalAt = now
+        }
+
+        if evaluation.bodyMetrics.codeReview != nil,
+           evaluation.usageBreakdown.isEmpty,
+           let debug = evaluation.scrape.usageBreakdownDebug,
+           !debug.isEmpty,
+           debug != state.lastUsageBreakdownDebug
+        {
+            state.lastUsageBreakdownDebug = debug
+            log("usage breakdown debug: \(debug)")
+        }
+
+        if let purchaseURL = evaluation.scrape.creditsPurchaseURL, purchaseURL != state.lastCreditsPurchaseURL {
+            state.lastCreditsPurchaseURL = purchaseURL
+            log("credits purchase url: \(purchaseURL)")
+        }
+    }
+
+    private func shouldWaitForCreditsHistoryRows(
+        evaluation: PollEvaluation,
+        state: inout PollState,
+        log: (String) -> Void) -> Bool
+    {
+        guard evaluation.events.isEmpty else { return false }
+        guard self.hasDashboardSignal(
+            bodyMetrics: evaluation.bodyMetrics,
+            usageBreakdown: evaluation.usageBreakdown,
+            creditsHeaderPresent: evaluation.scrape.creditsHeaderPresent,
+            hasUsageLimits: evaluation.hasUsageLimits)
+        else { return false }
+
+        log(
+            "credits header present=\(evaluation.scrape.creditsHeaderPresent) " +
+                "inViewport=\(evaluation.scrape.creditsHeaderInViewport) " +
+                "didScroll=\(evaluation.scrape.didScrollToCredits) " +
+                "rows=\(evaluation.scrape.rows.count)")
+        if evaluation.scrape.didScrollToCredits {
+            log("scrollIntoView(Credits usage history) requested; waiting…")
+            return true
+        }
+
+        if evaluation.scrape.creditsHeaderPresent,
+           evaluation.scrape.creditsHeaderInViewport,
+           state.creditsHeaderVisibleAt == nil
+        {
+            state.creditsHeaderVisibleAt = Date()
+        }
+        return Self.shouldWaitForCreditsHistory(.init(
+            now: Date(),
+            anyDashboardSignalAt: state.anyDashboardSignalAt,
+            creditsHeaderVisibleAt: state.creditsHeaderVisibleAt,
+            creditsHeaderPresent: evaluation.scrape.creditsHeaderPresent,
+            creditsHeaderInViewport: evaluation.scrape.creditsHeaderInViewport,
+            didScrollToCredits: evaluation.scrape.didScrollToCredits))
+    }
+
+    private func hasDashboardSignal(
+        bodyMetrics: BodyMetrics,
+        usageBreakdown: [OpenAIDashboardDailyBreakdown],
+        creditsHeaderPresent: Bool,
+        hasUsageLimits: Bool) -> Bool
+    {
+        bodyMetrics.codeReview != nil ||
+            bodyMetrics.sparkRemaining != nil ||
+            !usageBreakdown.isEmpty ||
+            creditsHeaderPresent ||
+            hasUsageLimits ||
+            bodyMetrics.creditsRemaining != nil
+    }
+
+    private func hasDashboardData(
+        bodyMetrics: BodyMetrics,
+        usageBreakdown: [OpenAIDashboardDailyBreakdown],
+        events: [CreditEvent],
+        hasUsageLimits: Bool) -> Bool
+    {
+        bodyMetrics.codeReview != nil ||
+            bodyMetrics.sparkRemaining != nil ||
+            !events.isEmpty ||
+            !usageBreakdown.isEmpty ||
+            hasUsageLimits ||
+            bodyMetrics.creditsRemaining != nil
+    }
+
+    private func shouldWaitForUsageBreakdown(
+        codeReview: Double?,
+        usageBreakdown: [OpenAIDashboardDailyBreakdown],
+        codeReviewFirstSeenAt: Date?) -> Bool
+    {
+        guard codeReview != nil, usageBreakdown.isEmpty else { return false }
+        let elapsed = Date().timeIntervalSince(codeReviewFirstSeenAt ?? Date())
+        return elapsed < 6
+    }
+
+    private func makeSnapshot(
+        scrape: ScrapeResult,
+        bodyMetrics: BodyMetrics,
+        creditMetrics: CreditMetrics,
+        usageBreakdown: [OpenAIDashboardDailyBreakdown],
+        accountPlan: String?) -> OpenAIDashboardSnapshot
+    {
+        OpenAIDashboardSnapshot(
+            signedInEmail: scrape.signedInEmail,
+            codeReviewRemainingPercent: bodyMetrics.codeReview,
+            sparkRemainingPercent: bodyMetrics.sparkRemaining,
+            creditEvents: creditMetrics.events,
+            dailyBreakdown: creditMetrics.breakdown,
+            usageBreakdown: usageBreakdown,
+            creditsPurchaseURL: scrape.creditsPurchaseURL,
+            primaryLimit: bodyMetrics.rateLimits.primary,
+            secondaryLimit: bodyMetrics.rateLimits.secondary,
+            creditsRemaining: bodyMetrics.creditsRemaining,
+            accountPlan: accountPlan,
+            updatedAt: Date())
     }
 
     struct CreditsHistoryWaitContext: Sendable {
