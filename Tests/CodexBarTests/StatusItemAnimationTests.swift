@@ -215,28 +215,19 @@ struct StatusItemAnimationTests {
 
         let percent = MenuBarDisplayText.displayText(
             mode: .percent,
-            provider: .codex,
             percentWindow: percentWindow,
-            paceWindow: paceWindow,
             pace: paceValue,
-            showUsed: true,
-            now: now)
+            showUsed: true)
         let pace = MenuBarDisplayText.displayText(
             mode: .pace,
-            provider: .codex,
             percentWindow: percentWindow,
-            paceWindow: paceWindow,
             pace: paceValue,
-            showUsed: true,
-            now: now)
+            showUsed: true)
         let both = MenuBarDisplayText.displayText(
             mode: .both,
-            provider: .codex,
             percentWindow: percentWindow,
-            paceWindow: paceWindow,
             pace: paceValue,
-            showUsed: true,
-            now: now)
+            showUsed: true)
 
         #expect(percent == "40%")
         #expect(pace == "+16%")
@@ -255,18 +246,12 @@ struct StatusItemAnimationTests {
 
         let pace = MenuBarDisplayText.displayText(
             mode: .pace,
-            provider: .gemini,
             percentWindow: percentWindow,
-            paceWindow: paceWindow,
-            showUsed: true,
-            now: now)
+            showUsed: true)
         let both = MenuBarDisplayText.displayText(
             mode: .both,
-            provider: .gemini,
             percentWindow: percentWindow,
-            paceWindow: paceWindow,
-            showUsed: true,
-            now: now)
+            showUsed: true)
 
         #expect(pace == nil)
         #expect(both == nil)
@@ -284,20 +269,14 @@ struct StatusItemAnimationTests {
 
         let pace = MenuBarDisplayText.displayText(
             mode: .pace,
-            provider: .codex,
             percentWindow: percentWindow,
-            paceWindow: paceWindow,
             pace: nil,
-            showUsed: true,
-            now: now)
+            showUsed: true)
         let both = MenuBarDisplayText.displayText(
             mode: .both,
-            provider: .codex,
             percentWindow: percentWindow,
-            paceWindow: paceWindow,
             pace: nil,
-            showUsed: true,
-            now: now)
+            showUsed: true)
 
         #expect(pace == nil)
         #expect(both == nil)
