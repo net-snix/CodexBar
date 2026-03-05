@@ -104,7 +104,7 @@ Usage source picker:
   - Uses per-model token counts (input, cache read/create, output).
   - Deduplicates streaming chunks by `message.id + requestId` (usage is cumulative per chunk).
 - Cache:
-  - `~/Library/Caches/CodexBar/cost-usage/claude-v1.json`
+  - `~/Library/Caches/CodexBar/cost-usage/claude-v2.json`
 
 ## Key files
 - OAuth: `Sources/CodexBarCore/Providers/Claude/ClaudeOAuth/*`

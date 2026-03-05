@@ -49,6 +49,10 @@ enum CostUsagePricing {
             inputCostPerToken: 1.75e-6,
             outputCostPerToken: 1.4e-5,
             cacheReadInputCostPerToken: 1.75e-7),
+        "gpt-5.4": CodexPricing(
+            inputCostPerToken: 2.5e-6,
+            outputCostPerToken: 1.5e-5,
+            cacheReadInputCostPerToken: 2.5e-7),
     ]
 
     private static let claude: [String: ClaudePricing] = [
@@ -168,6 +172,11 @@ enum CostUsagePricing {
         var trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasPrefix("openai/") {
             trimmed = String(trimmed.dropFirst("openai/".count))
+        }
+
+        // GPT-5.4 is the current Codex default; older session logs may still include a `-codex` suffix.
+        if trimmed == "gpt-5.4" || trimmed.hasPrefix("gpt-5.4-codex") {
+            return "gpt-5.4"
         }
 
         // Canonicalize GPT-5.3 family to the published Codex model name.

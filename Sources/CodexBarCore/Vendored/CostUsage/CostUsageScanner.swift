@@ -253,7 +253,9 @@ enum CostUsageScanner {
         }
 
         let maxLineBytes = 256 * 1024
-        let prefixBytes = 32 * 1024
+        // Codex turn_context lines can exceed 32 KiB once full instructions are embedded.
+        // Keep the full line so we don't drop the active model and fall back to the default bucket.
+        let prefixBytes = maxLineBytes
 
         let parsedBytes = (try? CostUsageJsonl.scan(
             fileURL: fileURL,

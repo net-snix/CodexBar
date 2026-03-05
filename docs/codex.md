@@ -112,9 +112,10 @@ Usage source picker:
   - Or `$CODEX_HOME/sessions/...` + `$CODEX_HOME/archived_sessions/...` if `CODEX_HOME` is set.
 - Scanner:
   - Parses `event_msg` token_count entries and `turn_context` model markers.
+  - Normalizes current `gpt-5.4` Codex sessions plus older `gpt-5.x-codex` aliases for pricing/reporting.
   - Computes input/cached/output token deltas and per-model cost.
 - Cache:
-  - `~/Library/Caches/CodexBar/cost-usage/codex-v1.json`
+  - `~/Library/Caches/CodexBar/cost-usage/codex-v2.json`
 - Window: last 30 days (rolling), with a 60s minimum refresh interval.
 
 ## Key files

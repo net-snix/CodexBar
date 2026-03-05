@@ -10,7 +10,7 @@ enum CostUsageCacheIO {
         let root = cacheRoot ?? self.defaultCacheRoot()
         return root
             .appendingPathComponent("cost-usage", isDirectory: true)
-            .appendingPathComponent("\(provider.rawValue)-v1.json", isDirectory: false)
+            .appendingPathComponent("\(provider.rawValue)-v\(CostUsageCache.currentVersion).json", isDirectory: false)
     }
 
     static func load(provider: UsageProvider, cacheRoot: URL? = nil) -> CostUsageCache {
@@ -23,7 +23,7 @@ enum CostUsageCacheIO {
         guard let data = try? Data(contentsOf: url) else { return nil }
         guard let decoded = try? JSONDecoder().decode(CostUsageCache.self, from: data)
         else { return nil }
-        guard decoded.version == 1 else { return nil }
+        guard decoded.version == CostUsageCache.currentVersion else { return nil }
         return decoded
     }
 
@@ -44,7 +44,9 @@ enum CostUsageCacheIO {
 }
 
 struct CostUsageCache: Codable, Sendable {
-    var version: Int = 1
+    static let currentVersion = 2
+
+    var version: Int = Self.currentVersion
     var lastScanUnixMs: Int64 = 0
 
     /// filePath -> file usage
