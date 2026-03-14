@@ -44,6 +44,7 @@ struct CostUsagePricingTests {
         #expect(CostUsagePricing.codexDisplayLabel(model: "gpt-5.3-codex-spark") == "Research Preview")
         #expect(CostUsagePricing.codexDisplayLabel(model: "gpt-5.2-codex") == nil)
     }
+    @Test
     func normalizesClaudeOpus41DatedVariants() {
         #expect(CostUsagePricing.normalizeClaudeModel("claude-opus-4-1-20250805") == "claude-opus-4-1")
     }
