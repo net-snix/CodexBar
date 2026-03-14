@@ -4,17 +4,13 @@ import Testing
 @Suite
 struct CostUsagePricingTests {
     @Test
-    func normalizesCodexModelVariants() {
-        #expect(CostUsagePricing.normalizeCodexModel("openai/gpt-5-codex") == "gpt-5")
-        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.2-codex") == "gpt-5.2")
-        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.1-codex-max") == "gpt-5.1")
-        #expect(CostUsagePricing.normalizeCodexModel("openai/gpt-5.4") == "gpt-5.4")
-        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.4-codex") == "gpt-5.4")
-        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.4-codex-max") == "gpt-5.4")
-        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3") == "gpt-5.3-codex")
-        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex") == "gpt-5.3-codex")
-        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-max") == "gpt-5.3-codex")
-        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-spark") == "gpt-5.3-codex")
+    func normalizesCodexModelVariantsExactly() {
+        #expect(CostUsagePricing.normalizeCodexModel("openai/gpt-5-codex") == "gpt-5-codex")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.2-codex") == "gpt-5.2-codex")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.1-codex-max") == "gpt-5.1-codex-max")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.4-pro-2026-03-05") == "gpt-5.4-pro")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-2026-03-05") == "gpt-5.3-codex")
+        #expect(CostUsagePricing.normalizeCodexModel("gpt-5.3-codex-spark") == "gpt-5.3-codex-spark")
     }
 
     @Test
@@ -28,66 +24,25 @@ struct CostUsagePricingTests {
     }
 
     @Test
-    func codexCostSupportsGpt53VariantsAndMatchesGpt52Rate() {
-        let input = 123_456
-        let cached = 78901
-        let output = 3210
-
-        let gpt52 = CostUsagePricing.codexCostUSD(
-            model: "gpt-5.2-codex",
-            inputTokens: input,
-            cachedInputTokens: cached,
-            outputTokens: output)
-        let gpt53Codex = CostUsagePricing.codexCostUSD(
+    func codexCostSupportsGpt53Codex() {
+        let cost = CostUsagePricing.codexCostUSD(
             model: "gpt-5.3-codex",
-            inputTokens: input,
-            cachedInputTokens: cached,
-            outputTokens: output)
-        let gpt53Spark = CostUsagePricing.codexCostUSD(
-            model: "gpt-5.3-codex-spark",
-            inputTokens: input,
-            cachedInputTokens: cached,
-            outputTokens: output)
-        let gpt53Max = CostUsagePricing.codexCostUSD(
-            model: "gpt-5.3-codex-max",
-            inputTokens: input,
-            cachedInputTokens: cached,
-            outputTokens: output)
-
-        #expect(gpt53Codex != nil)
-        #expect(gpt53Spark != nil)
-        #expect(gpt53Max != nil)
-        #expect(gpt53Codex == gpt52)
-        #expect(gpt53Spark == gpt52)
-        #expect(gpt53Max == gpt52)
+            inputTokens: 100,
+            cachedInputTokens: 10,
+            outputTokens: 5)
+        #expect(cost != nil)
     }
 
     @Test
-    func codexCostSupportsGpt54AndUsesNewRate() {
-        let input = 123_456
-        let cached = 78901
-        let output = 3210
-
-        let gpt53 = CostUsagePricing.codexCostUSD(
-            model: "gpt-5.3-codex",
-            inputTokens: input,
-            cachedInputTokens: cached,
-            outputTokens: output)
-        let gpt54 = CostUsagePricing.codexCostUSD(
-            model: "openai/gpt-5.4",
-            inputTokens: input,
-            cachedInputTokens: cached,
-            outputTokens: output)
-        let gpt54CodexAlias = CostUsagePricing.codexCostUSD(
-            model: "gpt-5.4-codex",
-            inputTokens: input,
-            cachedInputTokens: cached,
-            outputTokens: output)
-
-        #expect(gpt54 != nil)
-        #expect(gpt54CodexAlias != nil)
-        #expect(gpt54 == gpt54CodexAlias)
-        #expect((gpt54 ?? 0) > (gpt53 ?? 0))
+    func codexCostReturnsZeroForResearchPreviewModel() {
+        let cost = CostUsagePricing.codexCostUSD(
+            model: "gpt-5.3-codex-spark",
+            inputTokens: 100,
+            cachedInputTokens: 10,
+            outputTokens: 5)
+        #expect(cost == 0)
+        #expect(CostUsagePricing.codexDisplayLabel(model: "gpt-5.3-codex-spark") == "Research Preview")
+        #expect(CostUsagePricing.codexDisplayLabel(model: "gpt-5.2-codex") == nil)
     }
 
     @Test

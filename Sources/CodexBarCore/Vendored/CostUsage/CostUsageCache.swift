@@ -1,6 +1,15 @@
 import Foundation
 
 enum CostUsageCacheIO {
+    private static func artifactVersion(for provider: UsageProvider) -> Int {
+        switch provider {
+        case .codex:
+            2
+        default:
+            1
+        }
+    }
+
     private static func defaultCacheRoot() -> URL {
         let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
         return root.appendingPathComponent("CodexBar", isDirectory: true)
@@ -8,9 +17,10 @@ enum CostUsageCacheIO {
 
     static func cacheFileURL(provider: UsageProvider, cacheRoot: URL? = nil) -> URL {
         let root = cacheRoot ?? self.defaultCacheRoot()
+        let artifactVersion = self.artifactVersion(for: provider)
         return root
             .appendingPathComponent("cost-usage", isDirectory: true)
-            .appendingPathComponent("\(provider.rawValue)-v\(CostUsageCache.currentVersion).json", isDirectory: false)
+            .appendingPathComponent("\(provider.rawValue)-v\(artifactVersion).json", isDirectory: false)
     }
 
     static func load(provider: UsageProvider, cacheRoot: URL? = nil) -> CostUsageCache {
@@ -23,7 +33,7 @@ enum CostUsageCacheIO {
         guard let data = try? Data(contentsOf: url) else { return nil }
         guard let decoded = try? JSONDecoder().decode(CostUsageCache.self, from: data)
         else { return nil }
-        guard decoded.version == CostUsageCache.currentVersion else { return nil }
+        guard decoded.version == 1 else { return nil }
         return decoded
     }
 
@@ -44,9 +54,7 @@ enum CostUsageCacheIO {
 }
 
 struct CostUsageCache: Codable, Sendable {
-    static let currentVersion = 2
-
-    var version: Int = Self.currentVersion
+    var version: Int = 1
     var lastScanUnixMs: Int64 = 0
 
     /// filePath -> file usage
