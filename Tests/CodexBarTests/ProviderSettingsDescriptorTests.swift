@@ -123,7 +123,6 @@ struct ProviderSettingsDescriptorTests {
         #expect(pickers.contains(where: { $0.id == "codex-usage-source" }))
         #expect(pickers.contains(where: { $0.id == "codex-cookie-source" }))
         #expect(toggles.contains(where: { $0.id == "codex-historical-tracking" }))
-<<<<<<< HEAD
     }
 
     @Test
