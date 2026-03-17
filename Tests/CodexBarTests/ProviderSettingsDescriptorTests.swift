@@ -334,8 +334,6 @@ struct ProviderSettingsDescriptorTests {
         #expect(toggle.isEnabled?() == true)
         #expect(toggle.binding.wrappedValue == true)
         #expect(toggle.statusText?() == nil)
-=======
->>>>>>> 93820c1 (Move historical tracking toggle to Codex settings)
     }
 
     @Test
